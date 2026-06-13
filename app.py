@@ -11,31 +11,52 @@ st.set_page_config(page_title="Mundial 2026 chatarronianos", layout="wide")
 
 st.title("🏆 Mundial 2026 chatarronianos")
 
-# 🔗 CONEXIÓN CON GOOGLE SHEETS (USANDO SECRETS)
+# 🔗 CONEXIÓN PÚBLICA (SIN CLAVES)
 try:
-    # 1. Cargamos el diccionario de credenciales desde Streamlit Secrets
-    creds_dict = st.secrets["gspread"]
+    sheet_id = "1NncO0BuIR8BeYNz8a-VIUODFRx6rdDRwa0xZJQypG44"
     
-    # 2. Creamos el cliente de gspread
-    gc = gspread.service_account_from_dict(creds_dict)
-    
-    # 3. Abrimos el documento
-    id_excel = "1NncO0BuIR8BeYNz8a-VIUODFRx6rdDRwa0xZJQypG44"
-    doc = gc.open_by_key(id_excel)
-    
-    # 4. Cargamos las hojas
-    hoja_user = doc.worksheet("Participantes ")
-    df_usuarios = pd.DataFrame(hoja_user.get_all_records())
-    df_calendario = pd.DataFrame(doc.worksheet("calendario").get_all_records())
+    # URL para descargar la hoja como CSV directamente
+    url_participantes = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Participantes"
+    url_calendario = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=calendario"
+    url_equipos = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=equipos"
+
+    df_usuarios = pd.read_csv(url_participantes)
+    df_calendario = pd.read_csv(url_calendario)
     
     try:
-        df_equipos = pd.DataFrame(doc.worksheet("equipos").get_all_records())
+        df_equipos = pd.read_csv(url_equipos)
     except:
         df_equipos = pd.DataFrame()
         
 except Exception as e:
-    st.error(f"🚨 Error de conexión: {e}")
+    st.error(f"🚨 Error al conectar con la hoja: {e}")
     st.stop()
+
+# # 🔗 CONEXIÓN CON GOOGLE SHEETS (USANDO SECRETS)
+# try:
+#     # 1. Cargamos el diccionario de credenciales desde Streamlit Secrets
+#     creds_dict = st.secrets["gspread"]
+    
+#     # 2. Creamos el cliente de gspread
+#     gc = gspread.service_account_from_dict(creds_dict)
+    
+#     # 3. Abrimos el documento
+#     id_excel = "1NncO0BuIR8BeYNz8a-VIUODFRx6rdDRwa0xZJQypG44"
+#     doc = gc.open_by_key(id_excel)
+    
+#     # 4. Cargamos las hojas
+#     hoja_user = doc.worksheet("Participantes ")
+#     df_usuarios = pd.DataFrame(hoja_user.get_all_records())
+#     df_calendario = pd.DataFrame(doc.worksheet("calendario").get_all_records())
+    
+#     try:
+#         df_equipos = pd.DataFrame(doc.worksheet("equipos").get_all_records())
+#     except:
+#         df_equipos = pd.DataFrame()
+        
+# except Exception as e:
+#     st.error(f"🚨 Error de conexión: {e}")
+#     st.stop()
 
 # # 🔗 CONEXIÓN CON GOOGLE SHEETS
 # try:
