@@ -13,12 +13,12 @@ st.title("🏆 Mundial 2026 chatarronianos")
 
 # 🔗 CONEXIÓN CON GOOGLE SHEETS
 try:
-    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    credenciales = Credentials.from_service_account_file("creds.json", scopes=scope)
-    cliente = gspread.authorize(credenciales)
+    # Cargamos las credenciales desde los secretos de Streamlit
+    creds_dict = st.secrets["gspread"]
+    gc = gspread.service_account_from_dict(creds_dict)
     
     id_excel = "1NncO0BuIR8BeYNz8a-VIUODFRx6rdDRwa0xZJQypG44"
-    doc = cliente.open_by_key(id_excel)
+    doc = gc.open_by_key(id_excel)
     
     hoja_user = doc.worksheet("Participantes ")
     df_usuarios = pd.DataFrame(hoja_user.get_all_records())
@@ -30,7 +30,7 @@ try:
         df_equipos = pd.DataFrame()
     
 except Exception as e:
-    st.error(f"🚨 Error de conexión con Google Sheets: {e}")
+    st.error(f"🚨 Error de conexión: {e}")
     st.stop()
 
 col_nombre = "Nombre "
