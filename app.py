@@ -11,15 +11,19 @@ st.set_page_config(page_title="Mundial 2026 chatarronianos", layout="wide")
 
 st.title("🏆 Mundial 2026 chatarronianos")
 
-# 🔗 CONEXIÓN CON GOOGLE SHEETS
+# 🔗 CONEXIÓN CON GOOGLE SHEETS (USANDO SECRETS)
 try:
-    # Cargamos las credenciales desde los secretos de Streamlit
+    # 1. Cargamos el diccionario de credenciales desde Streamlit Secrets
     creds_dict = st.secrets["gspread"]
+    
+    # 2. Creamos el cliente de gspread
     gc = gspread.service_account_from_dict(creds_dict)
     
+    # 3. Abrimos el documento
     id_excel = "1NncO0BuIR8BeYNz8a-VIUODFRx6rdDRwa0xZJQypG44"
     doc = gc.open_by_key(id_excel)
     
+    # 4. Cargamos las hojas
     hoja_user = doc.worksheet("Participantes ")
     df_usuarios = pd.DataFrame(hoja_user.get_all_records())
     df_calendario = pd.DataFrame(doc.worksheet("calendario").get_all_records())
@@ -28,10 +32,32 @@ try:
         df_equipos = pd.DataFrame(doc.worksheet("equipos").get_all_records())
     except:
         df_equipos = pd.DataFrame()
-    
+        
 except Exception as e:
     st.error(f"🚨 Error de conexión: {e}")
     st.stop()
+
+# # 🔗 CONEXIÓN CON GOOGLE SHEETS
+# try:
+#     # Cargamos las credenciales desde los secretos de Streamlit
+#     creds_dict = st.secrets["gspread"]
+#     gc = gspread.service_account_from_dict(creds_dict)
+    
+#     id_excel = "1NncO0BuIR8BeYNz8a-VIUODFRx6rdDRwa0xZJQypG44"
+#     doc = gc.open_by_key(id_excel)
+    
+#     hoja_user = doc.worksheet("Participantes ")
+#     df_usuarios = pd.DataFrame(hoja_user.get_all_records())
+#     df_calendario = pd.DataFrame(doc.worksheet("calendario").get_all_records())
+    
+#     try:
+#         df_equipos = pd.DataFrame(doc.worksheet("equipos").get_all_records())
+#     except:
+#         df_equipos = pd.DataFrame()
+    
+# except Exception as e:
+#     st.error(f"🚨 Error de conexión: {e}")
+#     st.stop()
 
 col_nombre = "Nombre "
 col_puntos = "Puntos_totales." 
