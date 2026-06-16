@@ -1,14 +1,7 @@
-<<<<<<< Updated upstream
+Plaintext
 streamlit
 pandas
 gspread
 google-auth
 flag
-=======
-streamlit
-pandas
-gspread
-google-auth
-flag
->>>>>>> Stashed changes
 plotly

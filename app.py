@@ -174,7 +174,7 @@ else:
         with col_centro:
             st.dataframe(
                 df_tabla_display,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "Pos": st.column_config.TextColumn("Pos", width="small"),
@@ -494,7 +494,7 @@ else:
         st.header("📅 Estado de los Partidos del Mundial")
         columnas_calendario = ["Grupo", "Equipo_1", "Goles_1", "Equipo_2", "Goles_2", "Estado", "Ganador"]
         cols_disponibles = [c for c in columnas_calendario if c in df_calendario.columns]
-        st.dataframe(df_calendario[cols_disponibles], use_container_width=True)
+        st.dataframe(df_calendario[cols_disponibles], width='stretch')
 
     # ==========================================
     # PESTAÑA 4: PRONÓSTICO DINÁMICO
@@ -595,7 +595,7 @@ else:
         st.subheader("📋 Ranking Proyectado")
         st.dataframe(
             df_pron[["🏅", "Jugador", "Pts Reales", "Pts Proyectados", "Bonus Lobo 🐺"]],
-            use_container_width=True,
+            width='stretch',
             hide_index=False,
         )
 
@@ -649,7 +649,7 @@ else:
                         "Elegido por": quien[0] if len(quien) > 0 else "—"
                     })
             if lobos_info:
-                st.dataframe(pd.DataFrame(lobos_info), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(lobos_info), width='stretch', hide_index=True)
 
     with tab4:
         mostrar_pronostico_dinamico(df_usuarios, df_equipos, df_llaves)
