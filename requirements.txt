@@ -1,7 +1,6 @@
-Plaintext
 streamlit
 pandas
 gspread
 google-auth
-flag
+emoji-country-flag
 plotly
