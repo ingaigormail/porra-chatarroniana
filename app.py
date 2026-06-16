@@ -197,6 +197,45 @@ else:
         st.write("---")
 
         # ==========================================
+        # 📅 ESTADO DE PARTIDOS Y FASES
+        # ==========================================
+        st.subheader("📅 Estado de Partidos y Fases 🏟️")
+
+        # ── Verificación temporal de columnas (visible solo para Luis) ──
+        if nombre_usuario.strip().lower() == "luis":
+            with st.expander("🔎 Verificar columnas calendario (admin)"):
+                st.write("Columnas disponibles en calendario:", list(df_calendario.columns))
+
+        def _icono_fase(fase):
+            f = str(fase).lower()
+            if 'grupo' in f:
+                return "🌍"
+            elif any(x in f for x in ['octavo', 'dieciseis', '16', '32', 'treintaidos']):
+                return "⚔️"
+            elif any(x in f for x in ['cuarto', 'semi', 'final', 'tercero']):
+                return "🏆"
+            return "🏟️"
+
+        if 'Fase ' in df_calendario.columns and 'Estado' in df_calendario.columns:
+            _orden_fases_manual = ['Grupos', 'Dieciseis', 'Octavos', 'Cuartos', 'Semifinal', '3 y 4', 'Final']
+            _fases_disponibles = set(df_calendario['Fase '].dropna().unique())
+            _fases_extra = sorted([f for f in _fases_disponibles if f not in _orden_fases_manual])
+            fases_orden = [f for f in _orden_fases_manual if f in _fases_disponibles] + _fases_extra
+            for _fase in fases_orden:
+                df_fase_cal = df_calendario[df_calendario['Fase '] == _fase]
+                _jugados = int((df_fase_cal['Estado'] == 'Jugado').sum())
+                _pendientes = int((df_fase_cal['Estado'] == 'Pendiente').sum())
+                with st.container(border=True):
+                    st.markdown(f"#### {_icono_fase(_fase)} Fase: {_fase}")
+                    _cj, _cp = st.columns(2)
+                    _cj.metric("Jugados ⚽", _jugados)
+                    _cp.metric("Pendientes ⏳", _pendientes)
+        else:
+            st.warning(f"⚠️ No se encuentran las columnas 'Fase ' o 'Estado'. Columnas: {list(df_calendario.columns)}")
+
+        st.write("---")
+
+        # ==========================================
         # 🚀 QUIÉN HA SUBIDO / BAJADO MÁS
         # ==========================================
         df_movimiento = df_ranking[df_ranking["Posicion_anterior"] > 0].copy()
@@ -257,7 +296,7 @@ else:
             cols_equipos = [c for c in df_usuarios.columns if 'equipo' in str(c).lower() and 'pts_' not in str(c).lower()]
             todos_los_votos = df_usuarios[cols_equipos].values.flatten()
 
-            # Normalizar nombre: sin acentos, sin espacios extra, minúsculas → clave de agrupación
+            # Normalizar nombre: sin tildes, sin espacios extra, minúsculas → clave de agrupación
             def _canon_eq(x):
                 s = str(x).strip()
                 s = ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
@@ -279,7 +318,7 @@ else:
                              for x in todos_los_votos
                              if str(x).strip() != "" and str(x).strip().lower() != "nan"
                              and _canon_eq(x) in _mapa_repr]
-            
+
             if votos_limpios:
                 conteo = Counter(votos_limpios)
                 favorito = conteo.most_common(1)[0]
@@ -297,6 +336,24 @@ else:
         # ==========================================
         # 📊 GRÁFICO: EQUIPOS MÁS APOSTADOS
         # ==========================================
+        # 🔬 DIAGNÓSTICO (solo visible para el admin Luis)
+        if nombre_usuario.strip().lower() == "luis":
+            with st.expander("🔬 Diagnóstico raw de votos (admin)"):
+                st.caption("Valores exactos que llegan desde el Google Sheet para cada columna de equipo:")
+                cols_equipos_diag = [c for c in df_usuarios.columns if 'equipo' in str(c).lower() and 'pts_' not in str(c).lower()]
+                diag_rows = []
+                for _, r in df_usuarios.iterrows():
+                    for c in cols_equipos_diag:
+                        val = str(r[c]).strip()
+                        if val and val.lower() != "nan":
+                            diag_rows.append({"Jugador": r[col_nombre], "Columna": c, "Valor_raw": val, "Canon": _canon_eq(val)})
+                if diag_rows:
+                    df_diag = pd.DataFrame(diag_rows)
+                    st.write("**Conteo por forma canónica:**")
+                    st.dataframe(df_diag.groupby("Canon")["Jugador"].apply(list).reset_index().rename(columns={"Jugador": "Personas"}), hide_index=True)
+                    st.write("**Tabla completa raw:**")
+                    st.dataframe(df_diag, hide_index=True)
+
         if votos_limpios:
             st.subheader("📊 Equipos más apostados por los chatarronianos")
             conteo_todos = Counter(votos_limpios)
@@ -524,6 +581,91 @@ else:
             ))
             fig_rendimiento.update_layout(margin=dict(l=0, r=0, t=10, b=0), xaxis_title="Puntos Aportados", height=max(300, len(nombres_grafico)*30))
             st.plotly_chart(fig_rendimiento, width='stretch', theme=None, config={"displayModeBar": False})
+
+        st.write("---")
+        st.subheader("📅 Partidos de mis Equipos por Fase")
+
+        if 'Fase ' in df_calendario.columns and 'Estado' in df_calendario.columns and 'Equipo_1' in df_calendario.columns:
+            # Detectar columna de fecha (auto-detección)
+            _col_fecha_u = next((c for c in df_calendario.columns if 'fecha' in str(c).lower() or ('date' in str(c).lower() and 'update' not in str(c).lower())), None)
+
+            # Equipos del usuario: columnas que empiezan por G y no son de puntos
+            cols_g_user = [c for c in df_usuarios.columns if str(c).startswith('G') and 'pts_' not in str(c).lower()]
+            equipos_user = [str(fila_user.get(c, "")).strip() for c in cols_g_user]
+            equipos_user = [e for e in equipos_user if e and e.lower() != "nan"]
+
+            if equipos_user:
+                df_mis_partidos = df_calendario[
+                    df_calendario['Equipo_1'].isin(equipos_user) |
+                    df_calendario['Equipo_2'].isin(equipos_user)
+                ].copy()
+
+                if not df_mis_partidos.empty:
+                    # Orden manual de fases
+                    _orden_fases_u2 = ['Grupos', 'Dieciseis', 'Octavos', 'Cuartos', 'Semifinal', '3 y 4', 'Final']
+                    _fases_disp_u2 = set(df_mis_partidos['Fase '].dropna().unique())
+                    _fases_extra_u2 = sorted([f for f in _fases_disp_u2 if f not in _orden_fases_u2])
+                    fases_user = [f for f in _orden_fases_u2 if f in _fases_disp_u2] + _fases_extra_u2
+
+                    for _fase_u in fases_user:
+                        df_f_u = df_mis_partidos[df_mis_partidos['Fase '] == _fase_u]
+                        if df_f_u.empty:
+                            continue
+                        _jug_u = int((df_f_u['Estado'] == 'Jugado').sum())
+                        _pend_u = int((df_f_u['Estado'] == 'Pendiente').sum())
+
+                        with st.container(border=True):
+                            st.markdown(f"#### 👤 Fase: {_fase_u} {_icono_fase(_fase_u)}")
+                            _cu1, _cu2 = st.columns(2)
+                            _cu1.metric("Jugados ⚽", _jug_u)
+                            _cu2.metric("Pendientes ⏳", _pend_u)
+
+                            # ── Partidos JUGADOS ──
+                            _df_jug_u = df_f_u[df_f_u['Estado'] == 'Jugado']
+                            if not _df_jug_u.empty:
+                                st.markdown("**⚽ Jugados:**")
+                                for _, _rp in _df_jug_u.iterrows():
+                                    _e1 = str(_rp.get('Equipo_1', '')).strip()
+                                    _e2 = str(_rp.get('Equipo_2', '')).strip()
+                                    _g1 = _rp.get('Goles_1', '')
+                                    _g2 = _rp.get('Goles_2', '')
+                                    # Negrita al equipo del usuario
+                                    _e1f = f"**{_e1}**" if _e1 in equipos_user else _e1
+                                    _e2f = f"**{_e2}**" if _e2 in equipos_user else _e2
+                                    _fstr = ""
+                                    if _col_fecha_u:
+                                        try:
+                                            _fraw = str(_rp[_col_fecha_u]).strip()
+                                            if _fraw and _fraw.lower() != 'nan':
+                                                _fstr = f" · 📅 {pd.to_datetime(_fraw, dayfirst=True).strftime('%d/%m/%Y')}"
+                                        except Exception:
+                                            _fstr = f" · 📅 {_fraw}"
+                                    st.markdown(f"&nbsp;&nbsp;⚽ {_e1f} **{_g1}** - **{_g2}** {_e2f}{_fstr}")
+
+                            # ── Partidos PENDIENTES ──
+                            _df_pend_u = df_f_u[df_f_u['Estado'] == 'Pendiente']
+                            if not _df_pend_u.empty:
+                                st.markdown("**⏳ Pendientes:**")
+                                for _, _rp in _df_pend_u.iterrows():
+                                    _e1 = str(_rp.get('Equipo_1', '')).strip()
+                                    _e2 = str(_rp.get('Equipo_2', '')).strip()
+                                    _e1f = f"**{_e1}**" if _e1 in equipos_user else _e1
+                                    _e2f = f"**{_e2}**" if _e2 in equipos_user else _e2
+                                    _fstr = ""
+                                    if _col_fecha_u:
+                                        try:
+                                            _fraw = str(_rp[_col_fecha_u]).strip()
+                                            if _fraw and _fraw.lower() != 'nan':
+                                                _fstr = f" · 📅 {pd.to_datetime(_fraw, dayfirst=True).strftime('%d/%m/%Y')}"
+                                        except Exception:
+                                            _fstr = f" · 📅 {_fraw}"
+                                    st.markdown(f"&nbsp;&nbsp;⏳ {_e1f} vs {_e2f}{_fstr}")
+                else:
+                    st.info("No se encontraron partidos de tus equipos en el calendario.")
+            else:
+                st.info("No tienes equipos asignados para buscar en el calendario.")
+        else:
+            st.warning(f"⚠️ Columnas necesarias no encontradas en el calendario: {list(df_calendario.columns)}")
 
         st.caption("🔒 Tus apuestas están bloqueadas y son gestionadas por la administración del torneo.")
 
