@@ -248,7 +248,28 @@ else:
             st.header("🎯 Radar Chatarroniano")
             cols_equipos = [c for c in df_usuarios.columns if 'Equipo' in c and 'Pts_' not in c]
             todos_los_votos = df_usuarios[cols_equipos].values.flatten()
-            votos_limpios = [str(x).strip() for x in todos_los_votos if str(x).strip() != "" and str(x).lower() != "nan"]
+
+            # Normalizar nombre: sin acentos, sin espacios extra, minúsculas → clave de agrupación
+            def _canon_eq(x):
+                s = str(x).strip()
+                s = ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+                return s.lower()
+
+            # Mapa: forma_canónica -> nombre original representativo (primera aparición)
+            _mapa_repr = {}
+            for _v in todos_los_votos:
+                _orig = str(_v).strip()
+                if _orig == "" or _orig.lower() == "nan":
+                    continue
+                _k = _canon_eq(_orig)
+                if _k and _k != "nan" and _k not in _mapa_repr:
+                    _mapa_repr[_k] = _orig
+
+            # votos_limpios: lista unificada por forma canónica
+            votos_limpios = [_mapa_repr[_canon_eq(x)]
+                             for x in todos_los_votos
+                             if str(x).strip() != "" and str(x).strip().lower() != "nan"
+                             and _canon_eq(x) in _mapa_repr]
             
             if votos_limpios:
                 conteo = Counter(votos_limpios)
