@@ -235,24 +235,33 @@ else:
                 try:
                     col_pts_eq = [c for c in df_equipos.columns if 'punto' in str(c).lower()][0]
                     col_nom_eq = df_equipos.columns[0] 
-                    df_eq_sort = df_equipos.sort_values(by=col_pts_eq, ascending=False).reset_index(drop=True)
-                    mejor_equipo = df_eq_sort.loc[0, col_nom_eq]
+                    df_eq_sort = df_equipos.copy()
+                    df_eq_sort[col_pts_eq] = pd.to_numeric(df_eq_sort[col_pts_eq], errors='coerce').fillna(0)
+                    df_eq_sort = df_eq_sort.sort_values(by=col_pts_eq, ascending=False).reset_index(drop=True)
                     pts_mejor = df_eq_sort.loc[0, col_pts_eq]
-                    st.success(f"### {con_bandera(mejor_equipo)} con {pts_mejor} puntos")
-                except Exception:
-                    st.warning("Datos del MVP calculándose...")
+                    # Todos los equipos empatados en el máximo de puntos
+                    mejores = df_eq_sort[df_eq_sort[col_pts_eq] == pts_mejor][col_nom_eq].tolist()
+                    if len(mejores) == 1:
+                        st.success(f"### {con_bandera(mejores[0])} con {int(pts_mejor)} puntos")
+                    else:
+                        st.success(f"### 🏆 {int(pts_mejor)} puntos")
+                        for eq_mvp in mejores:
+                            st.write(f"• {con_bandera(eq_mvp)}")
+                except Exception as e:
+                    st.warning(f"Datos del MVP calculándose... ({e})")
             else:
                 st.warning("Datos del MVP no disponibles.")
 
         with col_stats2:
             st.header("🎯 Radar Chatarroniano")
-            cols_equipos = [c for c in df_usuarios.columns if 'Equipo' in c and 'Pts_' not in c]
+            cols_equipos = [c for c in df_usuarios.columns if 'equipo' in str(c).lower() and 'pts_' not in str(c).lower()]
             todos_los_votos = df_usuarios[cols_equipos].values.flatten()
 
             # Normalizar nombre: sin acentos, sin espacios extra, minúsculas → clave de agrupación
             def _canon_eq(x):
                 s = str(x).strip()
                 s = ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+                s = ' '.join(s.split())  # elimina espacios múltiples/no rompibles
                 return s.lower()
 
             # Mapa: forma_canónica -> nombre original representativo (primera aparición)
@@ -557,13 +566,33 @@ else:
             st.write("Columnas disponibles:", list(df_equipos.columns) if not df_equipos.empty else "Sin datos")
             return
 
-        # Columnas de equipos seleccionados por participantes
-        cols_equipos = [c for c in df_usuarios.columns if 'Equipo' in c and 'Pts_' not in c]
+        # Columnas de equipos seleccionados por participantes (case-insensitive)
+        cols_equipos = [c for c in df_usuarios.columns if 'equipo' in str(c).lower() and 'pts_' not in str(c).lower()]
 
-        # Conteo de votos por equipo (para detectar lobos solitarios)
+        # Función de normalización (igual que en el Radar Chatarroniano)
+        def _canon_eq_p4(x):
+            s = str(x).strip()
+            s = ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+            s = ' '.join(s.split())
+            return s.lower()
+
+        # Conteo de votos por equipo con normalización (para detectar lobos solitarios)
         todos_los_votos = df_usuarios[cols_equipos].values.flatten()
-        conteo_votos = pd.Series([str(x).strip() for x in todos_los_votos
-                                  if str(x).strip() != '' and str(x).lower() != 'nan']).value_counts()
+        # Mapa canónico → nombre representativo
+        _mapa_p4 = {}
+        for _v in todos_los_votos:
+            _orig = str(_v).strip()
+            if _orig == "" or _orig.lower() == "nan":
+                continue
+            _k = _canon_eq_p4(_orig)
+            if _k and _k != "nan" and _k not in _mapa_p4:
+                _mapa_p4[_k] = _orig
+
+        votos_normalizados = [_mapa_p4[_canon_eq_p4(x)]
+                              for x in todos_los_votos
+                              if str(x).strip() != "" and str(x).strip().lower() != "nan"
+                              and _canon_eq_p4(x) in _mapa_p4]
+        conteo_votos = pd.Series(votos_normalizados).value_counts()
 
         # Detectar lobos solitarios (elegidos por 1 sola persona)
         lobos_solitarios = set(conteo_votos[conteo_votos == 1].index)
