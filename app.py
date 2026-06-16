@@ -6,6 +6,8 @@ import flag
 from collections import Counter
 import plotly.graph_objects as go
 import unicodedata
+import os
+import datetime
 
 st.set_page_config(page_title="Mundial 2026 chatarronianos", layout="wide")
 
@@ -67,6 +69,14 @@ def limpiar_nombre(texto):
     texto = str(texto).strip().lower()
     texto = ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
     return texto
+
+# --- 📅 FECHA DE ÚLTIMA ACTUALIZACIÓN DEL ARCHIVO ---
+try:
+    _ts = os.path.getmtime(__file__)
+    _fecha_mod = datetime.datetime.fromtimestamp(_ts).strftime("%d/%m/%Y %H:%M")
+    st.sidebar.caption(f"🕐 Última actualización: **{_fecha_mod}**")
+except Exception:
+    pass
 
 # --- 🔐 VALIDACIÓN ÚNICA POR NOMBRE ---
 st.sidebar.header("🔑 Identificación")
