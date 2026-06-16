@@ -21,6 +21,9 @@ def cargar_datos():
     url_llaves = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=llaves"
 
     df_usuarios = pd.read_csv(url_participantes)
+    # Renombrar columna BD (índice 55) si viene como Unnamed por problema de exportación en Google Sheets
+    if 'Unnamed: 55' in df_usuarios.columns:
+        df_usuarios.rename(columns={'Unnamed: 55': 'Puntos_totales'}, inplace=True)
     df_calendario = pd.read_csv(url_calendario)
     try:
         df_equipos = pd.read_csv(url_equipos)
@@ -42,7 +45,16 @@ except Exception as e:
     st.stop()
 
 col_nombre = "Nombre "
-col_puntos = "Puntos_totales." 
+
+# Buscar dinámicamente la columna de puntos (tolerante a espacios y puntuación)
+_col_puntos_candidatos = [c for c in df_usuarios.columns if "puntos_totales" in str(c).lower().replace(" ", "_")]
+if _col_puntos_candidatos:
+    col_puntos = _col_puntos_candidatos[0]
+else:
+    # Fallback: mostrar columnas disponibles y detener la app
+    st.error(f"🚨 No se encontró la columna 'Puntos_totales' en la hoja Participantes. "
+             f"Columnas disponibles: {list(df_usuarios.columns)}")
+    st.stop()
 
 df_usuarios[col_puntos] = pd.to_numeric(df_usuarios[col_puntos], errors='coerce').fillna(0).astype(int)
 
