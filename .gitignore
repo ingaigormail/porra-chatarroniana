@@ -1,0 +1,25 @@
+# Secretos (van en Streamlit Cloud → Settings → Secrets)
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Tests / caché
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Scripts locales de mantenimiento (no necesarios en producción)
+_debug_*.py
