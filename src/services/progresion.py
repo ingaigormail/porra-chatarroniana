@@ -210,3 +210,121 @@ class ProgresionService:
         except Exception as e:
             print(f"Error al obtener usuarios con equipo: {e}")
             return pd.DataFrame()
+
+    def obtener_resumen_aplicado(self, fase=None):
+        """
+        Resumen de bonus ya otorgados, agrupado por equipo y fase.
+
+        Returns:
+            pd.DataFrame: equipo, fase, puntos, usuarios, fecha
+        """
+        try:
+            query = self.client.table('progresion_equipos').select(
+                'equipo_id, fase, puntos, usuario_id, fecha, equipos(nombre)'
+            )
+            if fase:
+                query = query.eq('fase', fase)
+            response = query.execute()
+            if not response.data:
+                return pd.DataFrame()
+
+            filas = []
+            for item in response.data:
+                eq = item.get('equipos') or {}
+                filas.append({
+                    'equipo_id': item['equipo_id'],
+                    'equipo': eq.get('nombre', 'Desconocido'),
+                    'fase': item['fase'],
+                    'puntos': int(item.get('puntos') or 0),
+                    'usuario_id': item['usuario_id'],
+                    'fecha': item.get('fecha', ''),
+                })
+
+            df = pd.DataFrame(filas)
+            resumen = df.groupby(
+                ['equipo_id', 'equipo', 'fase', 'puntos'], as_index=False
+            ).agg(
+                usuarios=('usuario_id', 'nunique'),
+                fecha=('fecha', 'max'),
+            )
+            from utils.partidos_orden import indice_fase
+            resumen['_ord'] = resumen['fase'].apply(indice_fase)
+            resumen = resumen.sort_values(
+                ['_ord', 'equipo']).drop(columns='_ord')
+            return resumen.reset_index(drop=True)
+        except Exception as e:
+            print(f"Error al obtener resumen progresión: {e}")
+            return pd.DataFrame()
+
+    def obtener_detalle_equipo_fase(self, equipo_id, fase):
+        """Usuarios que recibieron bonus para un equipo en una fase."""
+        try:
+            response = self.client.table('progresion_equipos').select(
+                'id, puntos, fecha, usuarios(nombre)'
+            ).eq('equipo_id', equipo_id).eq('fase', fase).execute()
+            if not response.data:
+                return pd.DataFrame()
+            data = []
+            for item in response.data:
+                usr = item.get('usuarios') or {}
+                data.append({
+                    'id': item['id'],
+                    'usuario': usr.get('nombre', '?'),
+                    'puntos': item['puntos'],
+                    'fecha': item.get('fecha', ''),
+                })
+            return pd.DataFrame(data)
+        except Exception as e:
+            print(f"Error detalle progresión: {e}")
+            return pd.DataFrame()
+
+    def eliminar_progresion_equipo_fase(self, equipo_id, fase):
+        """Elimina todos los bonus de un equipo en una fase."""
+        try:
+            prev = self.client.table('progresion_equipos').select('id').eq(
+                'equipo_id', equipo_id).eq('fase', fase).execute()
+            n = len(prev.data or [])
+            if n == 0:
+                return {'success': True, 'message': 'No había registros', 'eliminados': 0}
+            self.client.table('progresion_equipos').delete().eq(
+                'equipo_id', equipo_id).eq('fase', fase).execute()
+            return {
+                'success': True,
+                'message': f'Eliminados {n} registro(s) de progresión',
+                'eliminados': n,
+            }
+        except Exception as e:
+            return {'success': False, 'message': str(e), 'eliminados': 0}
+
+    def equipos_en_fase_partidos(self, fase):
+        """Equipos que participan en partidos de una fase (local o visitante)."""
+        try:
+            response = self.client.table('partidos').select(
+                'equipo_local_id, equipo_visitante_id'
+            ).eq('fase', fase).execute()
+            ids = set()
+            for p in response.data or []:
+                for col in ('equipo_local_id', 'equipo_visitante_id'):
+                    eid = p.get(col)
+                    if eid:
+                        ids.add(int(eid))
+            if not ids:
+                return pd.DataFrame()
+            equipos = self.client.table('equipos').select(
+                'id, nombre').in_('id', list(ids)).execute()
+            return pd.DataFrame(equipos.data or [])
+        except Exception as e:
+            print(f"Error equipos en fase: {e}")
+            return pd.DataFrame()
+
+    def equipos_sin_bonus_fase(self, fase):
+        """Equipos en partidos de la fase que aún no tienen bonus aplicado."""
+        en_fase = self.equipos_en_fase_partidos(fase)
+        if en_fase.empty:
+            return en_fase
+        aplicado = self.obtener_resumen_aplicado(fase=fase)
+        if aplicado.empty:
+            return en_fase.rename(columns={'nombre': 'equipo'})
+        con_bonus = set(aplicado['equipo_id'].astype(int))
+        sin = en_fase[~en_fase['id'].isin(con_bonus)].copy()
+        return sin.rename(columns={'nombre': 'equipo'})

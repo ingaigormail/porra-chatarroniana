@@ -185,3 +185,12 @@ class Database:
 
     def obtener_puntos_totales_progresion(self, usuario_id):
         return self.progresion.obtener_puntos_totales_progresion(usuario_id)
+
+    def obtener_resumen_progresion(self, fase=None):
+        return self.progresion.obtener_resumen_aplicado(fase)
+
+    def eliminar_progresion(self, equipo_id, fase):
+        return self.progresion.eliminar_progresion_equipo_fase(equipo_id, fase)
+
+    def equipos_sin_bonus_progresion(self, fase):
+        return self.progresion.equipos_sin_bonus_fase(fase)

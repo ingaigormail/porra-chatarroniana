@@ -206,6 +206,79 @@ def mostrar(nombre_usuario, partidos, db):
         "Bonus manual por avance de fase. Octavos (+10), Cuartos (+15), "
         "Semifinal (+20), Final (+30). Dieciseisavos: tú eliges los puntos.")
 
+    FASES_PROGRESION = [
+        'Dieciseisavos', 'Octavos', 'Cuartos', 'Semifinal', 'Final']
+
+    # --- Resumen de bonus ya aplicados ---
+    st.markdown("#### 📋 Bonus ya aplicados")
+    filtro_fase_resumen = st.selectbox(
+        "Ver fase",
+        options=['Todas'] + FASES_PROGRESION,
+        key="progresion_filtro_resumen",
+    )
+    fase_filtro = None if filtro_fase_resumen == 'Todas' else filtro_fase_resumen
+    resumen_prog = db.obtener_resumen_progresion(fase_filtro)
+
+    if resumen_prog.empty:
+        st.info("No hay bonus de progresión aplicados aún.")
+    else:
+        fase_prev = None
+        for idx, row in resumen_prog.iterrows():
+            if row['fase'] != fase_prev:
+                st.markdown(f"**🏟️ {row['fase']}**")
+                fase_prev = row['fase']
+            c1, c2, c3, c4, c5 = st.columns([2.5, 1, 1, 1.5, 1])
+            eid = int(row['equipo_id'])
+            fase_row = row['fase']
+            with c1:
+                st.write(f"**{row['equipo']}**")
+            with c2:
+                st.write(f"+{int(row['puntos'])} pts")
+            with c3:
+                st.write(f"{int(row['usuarios'])} usr.")
+            with c4:
+                fecha = row.get('fecha', '')
+                st.caption(str(fecha)[:10] if fecha else '—')
+            with c5:
+                if st.button(
+                        "🗑️",
+                        key=f"del_prog_{idx}_{eid}_{fase_row}",
+                        help="Borrar bonus de este equipo en esta fase"):
+                    r = db.eliminar_progresion(eid, fase_row)
+                    if r['success']:
+                        st.success(r['message'])
+                        _refrescar_datos()
+                    else:
+                        st.error(r['message'])
+
+            detalle = db.progresion.obtener_detalle_equipo_fase(eid, fase_row)
+            if not detalle.empty:
+                with st.expander(f"Ver usuarios — {row['equipo']}"):
+                    st.dataframe(
+                        detalle[['usuario', 'puntos', 'fecha']],
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+
+    # --- Equipos en fase sin bonus ---
+    st.markdown("#### ⏳ Equipos en fase sin bonus aplicado")
+    fase_sin_bonus = st.selectbox(
+        "Comprobar fase",
+        options=FASES_PROGRESION,
+        key="progresion_fase_sin_bonus",
+    )
+    sin_bonus = db.equipos_sin_bonus_progresion(fase_sin_bonus)
+    if sin_bonus.empty:
+        st.success(
+            f"Todos los equipos de **{fase_sin_bonus}** tienen bonus "
+            "(o aún no hay equipos en esa fase).")
+    else:
+        nombres = sin_bonus['equipo'].tolist()
+        st.warning(
+            f"**{len(nombres)}** equipo(s) en {fase_sin_bonus} sin bonus: "
+            + ", ".join(nombres))
+
+    st.markdown("#### ➕ Aplicar nuevo bonus")
     equipos_df = db.obtener_equipos()
     if equipos_df.empty:
         st.warning("⚠️ No hay equipos disponibles")
