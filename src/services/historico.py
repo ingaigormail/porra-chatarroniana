@@ -49,8 +49,9 @@ class HistoricoService:
             })
         return pd.DataFrame(data)
 
-    def obtener_movimientos(self, clasificacion_service):
-        df_actual = clasificacion_service.obtener_clasificacion()
+    def obtener_movimientos(self, clasificacion_service, df_actual=None):
+        if df_actual is None:
+            df_actual = clasificacion_service.obtener_clasificacion()
         if df_actual.empty:
             return pd.DataFrame()
 

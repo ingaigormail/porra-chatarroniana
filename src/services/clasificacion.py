@@ -6,65 +6,44 @@ class ClasificacionService:
     def __init__(self, client):
         self.client = client
 
+    def _nombre_usuario(self, item):
+        usr = item.get('usuarios') or {}
+        return usr.get('nombre') or 'Desconocido'
+
     def obtener_clasificacion(self):
         resultados = {}
+
+        def sumar(nombre, puntos):
+            if not nombre or puntos <= 0:
+                return
+            resultados[nombre] = resultados.get(nombre, 0) + int(puntos)
 
         # 1. Puntos de equipos (selecciones)
         response = self.client.table('selecciones')\
             .select('usuario_id, usuarios(nombre), equipos(puntos)')\
             .execute()
-        for item in response.data:
-            usuario_nombre = item['usuarios']['nombre'] if item['usuarios'] else 'Desconocido'
-            puntos_equipo = item['equipos']['puntos'] if item['equipos'] else 0
-            if usuario_nombre not in resultados:
-                resultados[usuario_nombre] = 0
-            resultados[usuario_nombre] += puntos_equipo
+        for item in response.data or []:
+            puntos_equipo = (item.get('equipos') or {}).get('puntos') or 0
+            sumar(self._nombre_usuario(item), puntos_equipo)
 
-        # 2. Puntos de quinielas (apuestas validadas)
+        # 2–4. Quinielas, finalistas y progresión (join usuarios, sin N+1)
         quiniela_response = self.client.table('quinielas')\
-            .select('usuario_id, puntos_finales')\
+            .select('puntos_finales, usuarios(nombre)')\
             .execute()
-        for item in quiniela_response.data:
-            usuario_id = item['usuario_id']
-            puntos = item.get('puntos_finales', 0)
-            if puntos > 0:
-                user_resp = self.client.table('usuarios').select(
-                    'nombre').eq('id', usuario_id).execute()
-                if user_resp.data:
-                    nombre = user_resp.data[0]['nombre']
-                    if nombre not in resultados:
-                        resultados[nombre] = 0
-                    resultados[nombre] += puntos
+        for item in quiniela_response.data or []:
+            sumar(self._nombre_usuario(item), item.get('puntos_finales') or 0)
 
-        # 3. Puntos de finalistas
         finalistas_response = self.client.table('finalistas_apostados')\
-            .select('usuario_id, puntos')\
+            .select('puntos, usuarios(nombre)')\
             .execute()
-        for item in finalistas_response.data:
-            user_resp = self.client.table('usuarios').select(
-                'nombre').eq('id', item['usuario_id']).execute()
-            if user_resp.data:
-                nombre = user_resp.data[0]['nombre']
-                puntos = item.get('puntos', 0)
-                if nombre not in resultados:
-                    resultados[nombre] = 0
-                resultados[nombre] += puntos
+        for item in finalistas_response.data or []:
+            sumar(self._nombre_usuario(item), item.get('puntos') or 0)
 
-        # 4. Puntos de progresión (bonus por avance de fase)
         progresion_response = self.client.table('progresion_equipos')\
-            .select('usuario_id, puntos')\
+            .select('puntos, usuarios(nombre)')\
             .execute()
-        for item in progresion_response.data:
-            usuario_id = item['usuario_id']
-            puntos = item.get('puntos', 0)
-            if puntos > 0:
-                user_resp = self.client.table('usuarios').select(
-                    'nombre').eq('id', usuario_id).execute()
-                if user_resp.data:
-                    nombre = user_resp.data[0]['nombre']
-                    if nombre not in resultados:
-                        resultados[nombre] = 0
-                    resultados[nombre] += puntos
+        for item in progresion_response.data or []:
+            sumar(self._nombre_usuario(item), item.get('puntos') or 0)
 
         df = pd.DataFrame([
             {'nombre': nombre, 'puntos': puntos}
@@ -94,10 +73,6 @@ class ClasificacionService:
         Puntos por usuario desglosados (versión simple).
         Columnas: partidos_selecciones, bonus por fase, quiniela, porra, finalistas.
         """
-        df_rank = self.obtener_clasificacion()
-        if df_rank.empty:
-            return pd.DataFrame()
-
         usuarios_r = self.client.table('usuarios').select('id, nombre').execute()
         uid_a_nombre = {
             u['id']: u['nombre'] for u in (usuarios_r.data or [])
@@ -170,14 +145,18 @@ class ClasificacionService:
                 desglose[nombre]['finalistas'] += pts
 
         filas = []
-        for _, row in df_rank.iterrows():
-            nombre = row['nombre']
-            d = desglose.get(nombre, vacio)
+        for nombre, d in desglose.items():
             filas.append({
                 'nombre': nombre,
-                'posicion': int(row['posicion']),
                 **{c: int(d.get(c, 0)) for c in categorias},
                 'total': int(sum(d.get(c, 0) for c in categorias)),
             })
 
-        return pd.DataFrame(filas)
+        if not filas:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(filas)
+        df = df[df['total'] > 0].sort_values(
+            'total', ascending=False).reset_index(drop=True)
+        df['posicion'] = df.index + 1
+        return df

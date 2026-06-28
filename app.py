@@ -1,4 +1,10 @@
 # app.py
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
 import streamlit as st
 import pandas as pd
 import unicodedata
@@ -91,10 +97,21 @@ def cargar_datos():
         'selecciones': db.obtener_selecciones()
     }
 
+
+@st.cache_data(ttl=60)
+def cargar_extras_clasificacion():
+    return {
+        'desglose': db.obtener_desglose_puntos(),
+        'mvp': db.obtener_mvp(),
+        'radar': db.obtener_radar(),
+        'votos': db.obtener_equipos_mas_votados(),
+        'puntos_equipos': db.obtener_puntos_equipos_reales(),
+    }
+
 datos = cargar_datos()
 
 # =============================================
-# PESTAÑAS
+# PESTAÑAS (solo carga la sección activa)
 # =============================================
 _tab_labels = [
     "👤 Mi Ficha",
@@ -105,15 +122,18 @@ _tab_labels = [
 if es_admin_luis(nombre_usuario):
     _tab_labels.extend(["🔧 Admin", "🎛️ Admin Extra"])
 
-_tabs = st.tabs(_tab_labels)
-tab1, tab2, tab3, tab4 = _tabs[:4]
-tab_admin = _tabs[4] if es_admin_luis(nombre_usuario) else None
-tab_admin_extra = _tabs[5] if es_admin_luis(nombre_usuario) else None
+opcion = st.radio(
+    "Navegación",
+    _tab_labels,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="nav_principal",
+)
 
 # =============================================
-# PESTAÑA 1: MI FICHA
+# CONTENIDO POR SECCIÓN
 # =============================================
-with tab1:
+if opcion == "👤 Mi Ficha":
     mi_ficha.mostrar(
         nombre_usuario,
         usuarios,
@@ -121,35 +141,22 @@ with tab1:
         db
     )
 
-# =============================================
-# PESTAÑA 2: CLASIFICACIÓN
-# =============================================
-with tab2:
+elif opcion == "🏆 Clasificación":
     clasificacion.mostrar(
         datos['clasificacion'],
         datos['partidos'],
-        db
+        db,
+        extras=cargar_extras_clasificacion(),
     )
 
-# =============================================
-# PESTAÑA 3: MUNDIAL
-# =============================================
-with tab3:
+elif opcion == "🌍 Mundial":
     mostrar_mundial(db)
 
-# =============================================
-# PESTAÑA 4: CALENDARIO
-# =============================================
-with tab4:
+elif opcion == "📅 Calendario":
     calendario.mostrar(datos['partidos'])
 
-# =============================================
-# ADMIN (solo Luis)
-# =============================================
-if tab_admin is not None:
-    with tab_admin:
-        mostrar_operaciones(nombre_usuario, datos['partidos'], db)
+elif opcion == "🔧 Admin" and es_admin_luis(nombre_usuario):
+    mostrar_operaciones(nombre_usuario, datos['partidos'], db)
 
-if tab_admin_extra is not None:
-    with tab_admin_extra:
-        mostrar_extra(nombre_usuario, datos['partidos'], db)
+elif opcion == "🎛️ Admin Extra" and es_admin_luis(nombre_usuario):
+    mostrar_extra(nombre_usuario, datos['partidos'], db)

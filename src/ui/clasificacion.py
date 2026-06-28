@@ -4,13 +4,14 @@ import pandas as pd
 import plotly.graph_objects as go
 from utils.banderas import con_bandera
 from utils.graficos_clasificacion import (
-    CATEGORIAS_DESGLOSE,
     color_barra_usuario,
+    construir_figura_desglose_apilado,
 )
 
 
-def mostrar(df_rank, partidos, db):
+def mostrar(df_rank, partidos, db, extras=None):
     """Muestra la pestaña de Clasificación"""
+    extras = extras or {}
 
     st.header("🏆 Clasificación General")
 
@@ -65,7 +66,7 @@ def mostrar(df_rank, partidos, db):
     # ==========================================
     st.subheader("📋 Clasificación Completa")
 
-    df_movimientos = db.obtener_movimientos()
+    df_movimientos = db.obtener_movimientos(df_actual=df_rank)
     df_tabla = df_rank.copy()
 
     if not df_movimientos.empty:
@@ -119,7 +120,7 @@ def mostrar(df_rank, partidos, db):
     with col_der:
         st.markdown("#### 📊 Clasificación en barras")
 
-        df_grafico = db.obtener_datos_grafico_clasificacion()
+        df_grafico = df_rank
 
         if not df_grafico.empty:
             colores = [
@@ -173,38 +174,13 @@ def mostrar(df_rank, partidos, db):
 
     st.markdown("#### 📊 Desglose de puntos por jugador")
 
-    df_desglose = db.obtener_desglose_puntos()
+    df_desglose = extras.get('desglose')
+    if df_desglose is None:
+        df_desglose = db.obtener_desglose_puntos()
     if df_desglose.empty:
         st.info("No hay datos para el desglose.")
     else:
-        fig_desglose = go.Figure()
-        for col, etiqueta, color in CATEGORIAS_DESGLOSE:
-            if df_desglose[col].sum() == 0:
-                continue
-            fig_desglose.add_trace(go.Bar(
-                name=etiqueta,
-                x=df_desglose['nombre'],
-                y=df_desglose[col],
-                marker_color=color,
-                hovertemplate=(
-                    '%{x}<br>' + etiqueta + ': %{y} pts<extra></extra>'
-                ),
-            ))
-
-        fig_desglose.update_layout(
-            barmode='stack',
-            margin=dict(l=0, r=0, t=30, b=80),
-            yaxis_title="Puntos",
-            xaxis=dict(showticklabels=True, tickangle=-45),
-            legend=dict(
-                orientation='h',
-                yanchor='bottom',
-                y=1.02,
-                xanchor='right',
-                x=1,
-            ),
-            height=max(450, 35 * len(df_desglose)),
-        )
+        fig_desglose = construir_figura_desglose_apilado(df_desglose)
 
         st.plotly_chart(
             fig_desglose,
@@ -213,8 +189,8 @@ def mostrar(df_rank, partidos, db):
             config={"displayModeBar": False},
         )
         st.caption(
-            "Grupos y partidos = puntos de tus selecciones en el torneo real. "
-            "Los bonus de fase se suman al pasar cada ronda.")
+            "Cada trozo muestra los puntos de esa categoría; el número de arriba es el total. "
+            "Grupos y partidos = selecciones en el torneo real; los bonus de fase se suman al pasar cada ronda.")
 
     st.write("---")
 
@@ -327,7 +303,9 @@ def mostrar(df_rank, partidos, db):
         st.header("🌟 El Equipo MVP")
         st.info("El país que más puntos está sumando en el torneo real.")
 
-        mvp_df = db.obtener_mvp()
+        mvp_df = extras.get('mvp')
+        if mvp_df is None:
+            mvp_df = db.obtener_mvp()
 
         if not mvp_df.empty:
             max_puntos = mvp_df['puntos'].iloc[0]
@@ -347,7 +325,9 @@ def mostrar(df_rank, partidos, db):
     with col_radar:
         st.header("🎯 Radar Chatarroniano")
 
-        radar_df = db.obtener_radar()
+        radar_df = extras.get('radar')
+        if radar_df is None:
+            radar_df = db.obtener_radar()
 
         if not radar_df.empty:
             favorito = radar_df.iloc[0]
@@ -374,7 +354,9 @@ def mostrar(df_rank, partidos, db):
     # ==========================================
     st.subheader("📊 Equipos más apostados por los chatarronianos")
 
-    df_votos = db.obtener_equipos_mas_votados()
+    df_votos = extras.get('votos')
+    if df_votos is None:
+        df_votos = db.obtener_equipos_mas_votados()
 
     if not df_votos.empty:
         colores = ['#19D3F3', '#00CC96'] * (len(df_votos) // 2 + 1)
@@ -409,7 +391,9 @@ def mostrar(df_rank, partidos, db):
     # ==========================================
     st.subheader("🏅 Puntos por Equipo en el Torneo Real")
 
-    df_puntos = db.obtener_puntos_equipos_reales()
+    df_puntos = extras.get('puntos_equipos')
+    if df_puntos is None:
+        df_puntos = db.obtener_puntos_equipos_reales()
 
     if not df_puntos.empty:
         colores = ['#2ECC71', '#F1C40F'] * (len(df_puntos) // 2 + 1)

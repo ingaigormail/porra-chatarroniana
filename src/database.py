@@ -79,8 +79,9 @@ class Database:
     def obtener_ultimo_snapshot(self):
         return self.historico.obtener_ultimo_snapshot()
 
-    def obtener_movimientos(self):
-        return self.historico.obtener_movimientos(self.clasificacion)
+    def obtener_movimientos(self, df_actual=None):
+        return self.historico.obtener_movimientos(
+            self.clasificacion, df_actual=df_actual)
 
     def guardar_resultado(
             self,

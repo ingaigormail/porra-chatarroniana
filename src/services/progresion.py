@@ -61,10 +61,25 @@ class ProgresionService:
                 }
         return mapa
 
+    def _clave_aplicado_sin_usuarios(self, equipo_id, fase):
+        return f'progresion_aplicada_{fase}_{equipo_id}'
+
+    def _marcar_aplicado_sin_usuarios(self, equipo_id, fase, puntos):
+        """Marca equipo/fase como aplicado aunque nadie lo tenga en selecciones."""
+        self.client.table('configuracion').upsert({
+            'clave': self._clave_aplicado_sin_usuarios(equipo_id, fase),
+            'valor': str(int(puntos)),
+        }).execute()
+
     def _equipo_ya_aplicado(self, equipo_id, fase):
         r = self.client.table('progresion_equipos').select('id').eq(
             'equipo_id', equipo_id).eq('fase', fase).limit(1).execute()
-        return bool(r.data)
+        if r.data:
+            return True
+        cfg = self.client.table('configuracion').select('clave').eq(
+            'clave', self._clave_aplicado_sin_usuarios(equipo_id, fase)
+        ).limit(1).execute()
+        return bool(cfg.data)
 
     def _contar_usuarios_equipo(self, equipo_id):
         r = self.client.table('selecciones').select(
@@ -95,14 +110,21 @@ class ProgresionService:
                 puntos = int(PUNTOS_FASE_FIJA.get(fase, 0))
 
             aplicado = self._equipo_ya_aplicado(eid, fase)
+            usuarios = self._contar_usuarios_equipo(eid)
+            if aplicado:
+                estado = '✅ Aplicado'
+            elif puntos > 0 and usuarios == 0:
+                estado = '⏳ Pendiente (sin apostadores)'
+            else:
+                estado = '⏳ Pendiente'
             filas.append({
                 'equipo_id': eid,
                 'equipo': nombre,
                 'motivo': motivo,
                 'puntos': puntos,
                 'aplicado': aplicado,
-                'estado': '✅ Aplicado' if aplicado else '⏳ Pendiente',
-                'usuarios': self._contar_usuarios_equipo(eid),
+                'estado': estado,
+                'usuarios': usuarios,
             })
 
         return pd.DataFrame(filas).sort_values('equipo').reset_index(drop=True)
@@ -145,6 +167,11 @@ class ProgresionService:
             if n == 0:
                 return {'success': True, 'message': 'No había registros', 'eliminados': 0}
             self.client.table('progresion_equipos').delete().neq('id', 0).execute()
+            cfg = self.client.table('configuracion').select('clave').like(
+                'clave', 'progresion_aplicada_%').execute()
+            for item in cfg.data or []:
+                self.client.table('configuracion').delete().eq(
+                    'clave', item['clave']).execute()
             return {
                 'success': True,
                 'message': f'Eliminados {n} registros de progresión',
@@ -221,10 +248,15 @@ class ProgresionService:
                 .execute()
 
             if not selecciones_response.data:
+                self._marcar_aplicado_sin_usuarios(
+                    equipo_id, fase, puntos_fase)
                 return {
                     'success': True,
-                    'message': f'No hay usuarios con este equipo',
-                    'usuarios_afectados': 0
+                    'message': (
+                        f'Nadie eligió este equipo; marcado como aplicado '
+                        f'(+{puntos_fase} pts)'
+                    ),
+                    'usuarios_afectados': 0,
                 }
 
             usuarios_ids = [sel['usuario_id']
@@ -448,6 +480,9 @@ class ProgresionService:
                 return {'success': True, 'message': 'No había registros', 'eliminados': 0}
             self.client.table('progresion_equipos').delete().eq(
                 'equipo_id', equipo_id).eq('fase', fase).execute()
+            self.client.table('configuracion').delete().eq(
+                'clave', self._clave_aplicado_sin_usuarios(equipo_id, fase)
+            ).execute()
             return {
                 'success': True,
                 'message': f'Eliminados {n} registro(s) de progresión',

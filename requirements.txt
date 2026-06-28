@@ -4,3 +4,4 @@ supabase>=2.0
 plotly>=5.0
 python-dotenv>=1.0
 flag>=0.1
+truststore>=0.10
