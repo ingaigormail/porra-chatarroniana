@@ -11,19 +11,29 @@ def mostrar_progresion(db):
         "Dieciseisavos: 1º=18, 2º=15, 3º mejor 1-8=12…2. "
         "Octavos +10, Cuartos +15, Semis +20, Final +30.")
 
-    with st.expander("🗑️ Borrar toda la progresión", expanded=False):
-        st.warning("Elimina todos los bonus ya aplicados.")
-        confirm = st.text_input("Escribe BORRAR", key="prog_confirm_borrar")
-        if st.button("Confirmar borrado total", type="primary"):
-            if confirm.strip().upper() != 'BORRAR':
-                st.error("Debes escribir BORRAR")
+    st.markdown("#### 🗑️ Borrar progresión antigua")
+    st.warning(
+        "Elimina **todos** los bonus de progresión ya aplicados "
+        "(para empezar de cero con las nuevas normas).")
+    confirm = st.text_input(
+        "Escribe BORRAR para confirmar",
+        key="prog_confirm_borrar",
+        placeholder="BORRAR",
+    )
+    if st.button(
+            "🗑️ Borrar toda la progresión",
+            type="primary",
+            use_container_width=True,
+            key="prog_btn_borrar_todo"):
+        if confirm.strip().upper() != 'BORRAR':
+            st.error("Debes escribir BORRAR en el campo de arriba.")
+        else:
+            r = db.eliminar_toda_progresion()
+            if r['success']:
+                st.success(r['message'])
+                refrescar_datos()
             else:
-                r = db.eliminar_toda_progresion()
-                if r['success']:
-                    st.success(r['message'])
-                    refrescar_datos()
-                else:
-                    st.error(r['message'])
+                st.error(r['message'])
 
     st.markdown("---")
     st.markdown("#### ➕ Aplicar fase completa")
