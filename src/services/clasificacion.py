@@ -88,3 +88,96 @@ class ClasificacionService:
             return 'normal'
         df['tipo_barra'] = df['nombre'].apply(get_color)
         return df
+
+    def obtener_desglose_puntos(self):
+        """
+        Puntos por usuario desglosados (versión simple).
+        Columnas: partidos_selecciones, bonus por fase, quiniela, porra, finalistas.
+        """
+        df_rank = self.obtener_clasificacion()
+        if df_rank.empty:
+            return pd.DataFrame()
+
+        usuarios_r = self.client.table('usuarios').select('id, nombre').execute()
+        uid_a_nombre = {
+            u['id']: u['nombre'] for u in (usuarios_r.data or [])
+        }
+
+        categorias = [
+            'partidos_selecciones',
+            'bonus_dieciseisavos',
+            'bonus_octavos',
+            'bonus_cuartos',
+            'bonus_semifinal',
+            'bonus_final',
+            'quiniela',
+            'porra',
+            'finalistas',
+        ]
+        vacio = {c: 0 for c in categorias}
+        desglose = {nombre: vacio.copy() for nombre in uid_a_nombre.values()}
+
+        sel_r = self.client.table('selecciones').select(
+            'usuario_id, equipos(puntos)').execute()
+        for item in sel_r.data or []:
+            nombre = uid_a_nombre.get(item['usuario_id'])
+            if not nombre:
+                continue
+            eq = item.get('equipos') or {}
+            desglose[nombre]['partidos_selecciones'] += int(eq.get('puntos') or 0)
+
+        fase_a_col = {
+            'Dieciseisavos': 'bonus_dieciseisavos',
+            'Octavos': 'bonus_octavos',
+            'Cuartos': 'bonus_cuartos',
+            'Semifinal': 'bonus_semifinal',
+            'Final': 'bonus_final',
+        }
+        prog_r = self.client.table('progresion_equipos').select(
+            'usuario_id, fase, puntos').execute()
+        for item in prog_r.data or []:
+            nombre = uid_a_nombre.get(item['usuario_id'])
+            col = fase_a_col.get(item.get('fase'))
+            if not nombre or not col:
+                continue
+            pts = int(item.get('puntos') or 0)
+            if pts > 0:
+                desglose[nombre][col] += pts
+
+        q_r = self.client.table('quinielas').select(
+            'usuario_id, tipo, puntos_finales').execute()
+        for item in q_r.data or []:
+            nombre = uid_a_nombre.get(item['usuario_id'])
+            if not nombre:
+                continue
+            pts = int(item.get('puntos_finales') or 0)
+            if pts <= 0:
+                continue
+            tipo = item.get('tipo')
+            if tipo == 'quiniela':
+                desglose[nombre]['quiniela'] += pts
+            elif tipo == 'porra':
+                desglose[nombre]['porra'] += pts
+
+        fin_r = self.client.table('finalistas_apostados').select(
+            'usuario_id, puntos').execute()
+        for item in fin_r.data or []:
+            nombre = uid_a_nombre.get(item['usuario_id'])
+            if not nombre:
+                continue
+            pts = int(item.get('puntos') or 0)
+            if pts > 0:
+                desglose[nombre]['finalistas'] += pts
+
+        filas = []
+        for _, row in df_rank.iterrows():
+            nombre = row['nombre']
+            d = desglose.get(nombre, vacio)
+            filas.append({
+                'nombre': nombre,
+                'posicion': int(row['posicion']),
+                **{c: int(d.get(c, 0)) for c in categorias},
+                'total': int(sum(d.get(c, 0) for c in categorias)),
+            })
+
+        return pd.DataFrame(filas)

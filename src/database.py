@@ -70,6 +70,9 @@ class Database:
     def obtener_datos_grafico_clasificacion(self):
         return self.clasificacion.obtener_datos_grafico_clasificacion()
 
+    def obtener_desglose_puntos(self):
+        return self.clasificacion.obtener_desglose_puntos()
+
     def guardar_snapshot(self):
         return self.historico.guardar_snapshot(self.clasificacion)
 

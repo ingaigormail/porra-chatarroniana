@@ -1,7 +1,12 @@
 # src/ui/clasificacion.py
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 from utils.banderas import con_bandera
+from utils.graficos_clasificacion import (
+    CATEGORIAS_DESGLOSE,
+    color_barra_usuario,
+)
 
 
 def mostrar(df_rank, partidos, db):
@@ -117,44 +122,15 @@ def mostrar(df_rank, partidos, db):
         df_grafico = db.obtener_datos_grafico_clasificacion()
 
         if not df_grafico.empty:
-            import plotly.graph_objects as go
-
-            colores = []
-            for _, row in df_grafico.iterrows():
-                nombre = row['nombre']
-                if str(nombre).strip().lower() in ['jc', 'saul']:
-                    colores.append({
-                        'color': 'rgba(255,0,0,0.0)',
-                        'pattern': {
-                            'shape': '|',
-                            'fgcolor': '#CC0000',
-                            'bgcolor': '#FFCE00',
-                            'size': 10,
-                            'solidity': 0.5
-                        }
-                    })
-                else:
-                    colores_paleta = [
-                        '#636EFA',
-                        '#EF553B',
-                        '#00CC96',
-                        '#AB63FA',
-                        '#FFA15A',
-                        '#19D3F3',
-                        '#FF6692',
-                        '#B6E880',
-                        '#FF97FF',
-                        '#FECB52',
-                        '#FF6B35',
-                        '#6C5CE7']
-                    idx = df_grafico.index.get_loc(
-                        row.name) % len(colores_paleta)
-                    colores.append(colores_paleta[idx])
+            colores = [
+                color_barra_usuario(row['nombre'], idx)
+                for idx, (_, row) in enumerate(df_grafico.iterrows())
+            ]
 
             fig = go.Figure()
 
-            for i, row in df_grafico.iterrows():
-                color_config = colores[i]
+            for idx, (_, row) in enumerate(df_grafico.iterrows()):
+                color_config = colores[idx]
                 if isinstance(
                         color_config,
                         dict) and 'pattern' in color_config:
@@ -194,6 +170,51 @@ def mostrar(df_rank, partidos, db):
                 "🔴🟡 Las barras de JC y Saul tienen rayas rojas y amarillas (bandera estelada)")
         else:
             st.info("No hay datos para mostrar")
+
+    st.markdown("#### 📊 Desglose de puntos por jugador")
+
+    df_desglose = db.obtener_desglose_puntos()
+    if df_desglose.empty:
+        st.info("No hay datos para el desglose.")
+    else:
+        fig_desglose = go.Figure()
+        for col, etiqueta, color in CATEGORIAS_DESGLOSE:
+            if df_desglose[col].sum() == 0:
+                continue
+            fig_desglose.add_trace(go.Bar(
+                name=etiqueta,
+                x=df_desglose['nombre'],
+                y=df_desglose[col],
+                marker_color=color,
+                hovertemplate=(
+                    '%{x}<br>' + etiqueta + ': %{y} pts<extra></extra>'
+                ),
+            ))
+
+        fig_desglose.update_layout(
+            barmode='stack',
+            margin=dict(l=0, r=0, t=30, b=80),
+            yaxis_title="Puntos",
+            xaxis=dict(showticklabels=True, tickangle=-45),
+            legend=dict(
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='right',
+                x=1,
+            ),
+            height=max(450, 35 * len(df_desglose)),
+        )
+
+        st.plotly_chart(
+            fig_desglose,
+            width='stretch',
+            theme=None,
+            config={"displayModeBar": False},
+        )
+        st.caption(
+            "Grupos y partidos = puntos de tus selecciones en el torneo real. "
+            "Los bonus de fase se suman al pasar cada ronda.")
 
     st.write("---")
 
