@@ -107,6 +107,8 @@ class PartidosService:
             equipos_dict)
         from utils.partidos_orden import ordenar_partidos
         return ordenar_partidos(df)
+
+    def actualizar_estado_apuesta(
             self,
             partido_id,
             tipo_apuesta,
