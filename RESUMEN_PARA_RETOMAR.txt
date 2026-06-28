@@ -1,0 +1,136 @@
+================================================================================
+RESUMEN PARA RETOMAR EN OTRA PC
+Tarea: Limpieza de Tipos de Datos - Porra Mundial 2026
+================================================================================
+
+QUÉ SE HIZO
+===========
+
+Se eliminó StreamlitMixedNumericTypesError mediante conversión inmediata a int()
+en st.number_input() de admin.py, junto con tests automatizados.
+
+RESULTADO
+=========
+
+✅ Tests: 5/5 PASS
+✅ Validaciones: TODAS OK
+✅ admin.py: MEJORADO (8 cambios)
+✅ Documentación: 8 archivos
+✅ Status: PRODUCTION-READY
+
+CÓMO RETOMAR EN OTRA PC
+=======================
+
+1. Copiar carpeta completa: c:\mundial_app_nueva
+
+2. Instalar dependencias:
+   pip install -r requirements.txt
+
+3. Verificar:
+   python -m pytest tests/test_data_integrity.py -v
+   # Esperado: 5 passed ✅
+   
+   python validate_admin_changes.py
+   # Esperado: TODAS LAS VALIDACIONES PASARON ✅
+
+4. Si algo falla:
+   python fix_admin_data_types.py
+   python fix_admin_jugados.py
+
+CAMBIOS PRINCIPALES
+===================
+
+admin.py PARTIDOS PENDIENTES (Líneas 553-580):
+  • goles_local = int(goles_local_raw) ← Conversión inmediata
+  • goles_visitante = int(goles_visitante_raw) ← Conversión inmediata
+  • Botón mejorado: "💾 Guardar"
+
+admin.py PARTIDOS JUGADOS (Líneas 630-662):
+  • goles_local_edit = int(goles_local_edit_raw) ← Conversión inmediata
+  • goles_visitante_edit = int(goles_visitante_edit_raw) ← Conversión inmediata
+  • Botón mejorado: "💾 Guardar"
+
+ARCHIVOS NUEVOS
+===============
+
+Tests (3):
+  • tests/__init__.py
+  • tests/conftest.py (mocks Supabase)
+  • tests/test_data_integrity.py (5 tests)
+
+Documentación (8):
+  • LEEME_PRIMERO.txt
+  • RESUMEN_CAMBIOS.txt
+  • ANTES_Y_DESPUES.md
+  • CAMBIOS_ADMIN_DATA_TYPES.md
+  • VERIFICACION_FINAL.md
+  • TROUBLESHOOTING.md
+  • ENTREGABLES.md
+  • BACKUP_COMPLETO_TAREA_PARTE1.md y PARTE2.md
+
+Scripts (3):
+  • validate_admin_changes.py
+  • fix_admin_data_types.py
+  • fix_admin_jugados.py
+
+Actualizados (2):
+  • src/ui/admin.py (8 cambios)
+  • requirements.txt (+pytest, +pytest-mock)
+
+VERIFICACIÓN RÁPIDA
+===================
+
+python -m pytest tests/test_data_integrity.py -v
+python validate_admin_changes.py
+python -m py_compile src/ui/admin.py
+
+Si todo pasa: ✅ LISTO PARA PRODUCCIÓN
+
+DOCUMENTACIÓN POR NECESIDAD
+===========================
+
+¿Qué se hizo?
+  → RESUMEN_CAMBIOS.txt o LEEME_PRIMERO.txt
+
+¿Cómo se hizo?
+  → ANTES_Y_DESPUES.md
+
+¿Cómo verificar?
+  → VERIFICACION_FINAL.md
+
+¿Problemas?
+  → TROUBLESHOOTING.md
+
+¿Detalles técnicos?
+  → CAMBIOS_ADMIN_DATA_TYPES.md
+
+¿Retomar todo?
+  → BACKUP_COMPLETO_TAREA_PARTE1.md y PARTE2.md
+
+GARANTÍAS
+=========
+
+✅ Cambios minimales (solo tipado)
+✅ Compatible con código existente
+✅ 5 tests automatizados (TODOS PASS)
+✅ Documentado completamente
+✅ Production-ready
+
+PRÓXIMO PASO
+============
+
+1. En la nueva PC, copiar toda la carpeta
+2. Instalar: pip install -r requirements.txt
+3. Verificar: python -m pytest tests/test_data_integrity.py -v
+4. Listo: Sistema funcionando ✅
+
+PROBLEMA RESUELTO
+=================
+
+StreamlitMixedNumericTypesError → ELIMINADO ✅
+
+El sistema está production-ready y listo para usar.
+
+================================================================================
+FIN DEL RESUMEN - Ver LEEME_PRIMERO.txt para más detalles
+================================================================================

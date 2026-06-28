@@ -1,0 +1,49 @@
+SELECT u.nombre, e.nombre, s.grupo_seleccion
+FROM selecciones s
+JOIN usuarios u ON u.id = s.usuario_id
+JOIN equipos e ON e.id = s.equipo_id
+WHERE u.id = 11
+ORDER BY s.grupo_seleccion;
+
+-- Resumen por usuario con puntos totales
+SELECT 
+    u.nombre AS usuario,
+    SUM(e.puntos) AS puntos_totales_equipos,
+    COUNT(e.id) AS total_equipos
+FROM selecciones s
+JOIN usuarios u ON u.id = s.usuario_id
+JOIN equipos e ON e.id = s.equipo_id
+GROUP BY u.id, u.nombre
+ORDER BY puntos_totales_equipos DESC;
+
+-- Consulta para ver los equipos de cada usuario con sus puntos reales buena 
+SELECT 
+    u.nombre AS usuario,
+    e.nombre AS equipo,
+    e.puntos AS puntos_equipo,
+    s.grupo_seleccion AS grupo_porra
+FROM selecciones s
+JOIN usuarios u ON u.id = s.usuario_id
+JOIN equipos e ON e.id = s.equipo_id
+ORDER BY u.nombre, s.grupo_seleccion;
+
+-- =============================================
+-- RESETEO DE PARTIDOS 73 Y 74
+-- =============================================
+
+-- 1. Eliminar las apuestas asociadas a estos partidos
+DELETE FROM quinielas WHERE partido_id IN (73, 74);
+
+-- 2. Resetear los partidos a estado Pendiente
+UPDATE partidos 
+SET 
+    estado = 'Pendiente',
+    goles_local = NULL,
+    goles_visitante = NULL,
+    hubo_prorroga = FALSE,
+    ganador_prorroga = NULL,
+    tipo_apuesta = 'ninguno',
+    apuestas_abiertas = FALSE
+WHERE id IN (73, 74);
+
+--

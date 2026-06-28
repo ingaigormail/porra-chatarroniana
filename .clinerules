@@ -1,0 +1,4 @@
+- Prioritize task completion over code refactoring.
+- Do not fix deprecation warnings unless they cause execution errors.
+- Focus strictly on the logic of the current task.
+- Do not perform broad searches unless explicitly requested.
