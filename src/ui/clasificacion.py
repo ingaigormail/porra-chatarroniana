@@ -377,8 +377,6 @@ def mostrar(df_rank, partidos, db):
     df_votos = db.obtener_equipos_mas_votados()
 
     if not df_votos.empty:
-        import plotly.graph_objects as go
-
         colores = ['#19D3F3', '#00CC96'] * (len(df_votos) // 2 + 1)
         colores = colores[:len(df_votos)]
 
@@ -414,8 +412,6 @@ def mostrar(df_rank, partidos, db):
     df_puntos = db.obtener_puntos_equipos_reales()
 
     if not df_puntos.empty:
-        import plotly.graph_objects as go
-
         colores = ['#2ECC71', '#F1C40F'] * (len(df_puntos) // 2 + 1)
         colores = colores[:len(df_puntos)]
 
