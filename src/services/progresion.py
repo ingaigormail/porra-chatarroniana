@@ -2,22 +2,172 @@
 import pandas as pd
 from datetime import datetime
 
+from config.puntos_progresion import (
+    FASES_PROGRESION,
+    PUNTOS_1_GRUPO,
+    PUNTOS_2_GRUPO,
+    PUNTOS_MEJOR_TERCERO,
+    PUNTOS_FASE_FIJA,
+)
+from src.services.cruces import GRUPOS, CrucesService
+from src.services.grupos import GruposService
+
 
 class ProgresionService:
     """Gestiona los puntos de progresión de equipos por avance de fase."""
 
+    FASES_VALIDAS = FASES_PROGRESION
+    PUNTOS_SUGERIDOS = PUNTOS_FASE_FIJA
+
     def __init__(self, client):
         self.client = client
 
-    # Fases válidas (Dieciseisavos sin valor fijo: puntos manuales)
-    FASES_VALIDAS = ['Dieciseisavos', 'Octavos', 'Cuartos', 'Semifinal', 'Final']
+    def _grupos_service(self):
+        return GruposService(self.client)
 
-    PUNTOS_SUGERIDOS = {
-        'Octavos': 10,
-        'Cuartos': 15,
-        'Semifinal': 20,
-        'Final': 30,
-    }
+    def _mapa_clasificacion_dieciseisavos(self):
+        """equipo_id -> {motivo, puntos} según grupos y ranking de terceros."""
+        gs = self._grupos_service()
+        mapa = {}
+        for grupo in GRUPOS:
+            df = gs.calcular_clasificacion_grupo(grupo)
+            if df.empty:
+                continue
+            for _, row in df.iterrows():
+                pos = int(row['posicion'])
+                eid = int(row['id'])
+                if pos == 1:
+                    mapa[eid] = {
+                        'motivo': f'1º Grupo {grupo}',
+                        'puntos': PUNTOS_1_GRUPO,
+                    }
+                elif pos == 2:
+                    mapa[eid] = {
+                        'motivo': f'2º Grupo {grupo}',
+                        'puntos': PUNTOS_2_GRUPO,
+                    }
+
+        cruces = CrucesService(self.client)
+        mejores = cruces.calcular_mejores_terceros(gs)
+        if not mejores.empty:
+            for _, row in mejores.iterrows():
+                if not row.get('clasifica'):
+                    continue
+                eid = int(row['id'])
+                rank = int(row['posicion_mejores_terceros'])
+                mapa[eid] = {
+                    'motivo': f'{rank}º mejor 3º (Grupo {row["grupo"]})',
+                    'puntos': PUNTOS_MEJOR_TERCERO.get(rank, 0),
+                }
+        return mapa
+
+    def _equipo_ya_aplicado(self, equipo_id, fase):
+        r = self.client.table('progresion_equipos').select('id').eq(
+            'equipo_id', equipo_id).eq('fase', fase).limit(1).execute()
+        return bool(r.data)
+
+    def _contar_usuarios_equipo(self, equipo_id):
+        r = self.client.table('selecciones').select(
+            'usuario_id').eq('equipo_id', equipo_id).execute()
+        return len(r.data or [])
+
+    def obtener_tabla_aplicar_fase(self, fase):
+        """
+        Tabla para aplicar bonus de una fase.
+        Columnas: equipo_id, equipo, motivo, puntos, aplicado, estado, usuarios
+        """
+        en_fase = self.equipos_en_fase_partidos(fase)
+        if en_fase.empty:
+            return pd.DataFrame()
+
+        mapa_r16 = self._mapa_clasificacion_dieciseisavos() if fase == 'Dieciseisavos' else {}
+
+        filas = []
+        for _, eq in en_fase.iterrows():
+            eid = int(eq['id'])
+            nombre = eq['nombre']
+            if fase == 'Dieciseisavos':
+                info = mapa_r16.get(eid, {'motivo': '— (revisar grupos)', 'puntos': 0})
+                motivo = info['motivo']
+                puntos = int(info['puntos'])
+            else:
+                motivo = f'Pasa a {fase}'
+                puntos = int(PUNTOS_FASE_FIJA.get(fase, 0))
+
+            aplicado = self._equipo_ya_aplicado(eid, fase)
+            filas.append({
+                'equipo_id': eid,
+                'equipo': nombre,
+                'motivo': motivo,
+                'puntos': puntos,
+                'aplicado': aplicado,
+                'estado': '✅ Aplicado' if aplicado else '⏳ Pendiente',
+                'usuarios': self._contar_usuarios_equipo(eid),
+            })
+
+        return pd.DataFrame(filas).sort_values('equipo').reset_index(drop=True)
+
+    def aplicar_progresion_fase(self, fase, puntos_por_equipo=None):
+        """Aplica bonus a todos los equipos pendientes de la fase."""
+        puntos_por_equipo = puntos_por_equipo or {}
+        tabla = self.obtener_tabla_aplicar_fase(fase)
+        if tabla.empty:
+            return {'success': False, 'message': 'No hay equipos en esta fase', 'equipos': 0}
+
+        total_usuarios = 0
+        equipos_ok = 0
+        errores = []
+
+        for _, row in tabla.iterrows():
+            if row['aplicado']:
+                continue
+            eid = int(row['equipo_id'])
+            pts = int(puntos_por_equipo.get(eid, row['puntos']))
+            if pts <= 0:
+                errores.append(f"{row['equipo']}: 0 puntos")
+                continue
+            r = self.calcular_y_guardar_progresion(eid, fase, pts)
+            if r['success']:
+                total_usuarios += r.get('usuarios_afectados', 0)
+                equipos_ok += 1
+            else:
+                errores.append(f"{row['equipo']}: {r['message']}")
+
+        msg = f'Aplicado en {equipos_ok} equipo(s), {total_usuarios} usuario(s) bonificados.'
+        if errores:
+            msg += ' Avisos: ' + '; '.join(errores[:3])
+        return {'success': True, 'message': msg, 'equipos': equipos_ok}
+
+    def eliminar_toda_progresion(self):
+        try:
+            prev = self.client.table('progresion_equipos').select('id').execute()
+            n = len(prev.data or [])
+            if n == 0:
+                return {'success': True, 'message': 'No había registros', 'eliminados': 0}
+            self.client.table('progresion_equipos').delete().neq('id', 0).execute()
+            return {
+                'success': True,
+                'message': f'Eliminados {n} registros de progresión',
+                'eliminados': n,
+            }
+        except Exception as e:
+            return {'success': False, 'message': str(e), 'eliminados': 0}
+
+    def actualizar_puntos_equipo_fase(self, equipo_id, fase, nuevos_puntos):
+        """Cambia los puntos ya otorgados a todos los usuarios (equipo+fase)."""
+        try:
+            nuevos_puntos = int(nuevos_puntos)
+            if nuevos_puntos < 0:
+                return {'success': False, 'message': 'Puntos inválidos'}
+            r = self.client.table('progresion_equipos').update({
+                'puntos': nuevos_puntos,
+            }).eq('equipo_id', equipo_id).eq('fase', fase).execute()
+            n = len(r.data or [])
+            if n == 0:
+                return {'success': False, 'message': 'No había bonus aplicado para este equipo/fase'}
+            return {'success': True, 'message': f'Actualizados {n} registro(s) a +{nuevos_puntos} pts'}
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
 
     def calcular_y_guardar_progresion(self, equipo_id, fase, puntos=None):
         """
@@ -37,12 +187,22 @@ class ProgresionService:
                 }
 
             if puntos is None:
-                if fase in self.PUNTOS_SUGERIDOS:
-                    puntos_fase = self.PUNTOS_SUGERIDOS[fase]
+                if fase == 'Dieciseisavos':
+                    mapa = self._mapa_clasificacion_dieciseisavos()
+                    info = mapa.get(int(equipo_id))
+                    if not info or info['puntos'] <= 0:
+                        return {
+                            'success': False,
+                            'message': 'No se pudo calcular puntos de dieciseisavos para este equipo.',
+                            'usuarios_afectados': 0,
+                        }
+                    puntos_fase = info['puntos']
+                elif fase in PUNTOS_FASE_FIJA:
+                    puntos_fase = PUNTOS_FASE_FIJA[fase]
                 else:
                     return {
                         'success': False,
-                        'message': 'Indica cuántos puntos sumar para Dieciseisavos.',
+                        'message': 'Indica cuántos puntos sumar.',
                         'usuarios_afectados': 0,
                     }
             else:

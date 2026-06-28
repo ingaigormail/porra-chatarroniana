@@ -194,3 +194,16 @@ class Database:
 
     def equipos_sin_bonus_progresion(self, fase):
         return self.progresion.equipos_sin_bonus_fase(fase)
+
+    def obtener_tabla_progresion_fase(self, fase):
+        return self.progresion.obtener_tabla_aplicar_fase(fase)
+
+    def aplicar_progresion_fase(self, fase, puntos_por_equipo=None):
+        return self.progresion.aplicar_progresion_fase(fase, puntos_por_equipo)
+
+    def eliminar_toda_progresion(self):
+        return self.progresion.eliminar_toda_progresion()
+
+    def actualizar_puntos_progresion(self, equipo_id, fase, puntos):
+        return self.progresion.actualizar_puntos_equipo_fase(
+            equipo_id, fase, puntos)
