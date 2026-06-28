@@ -12,7 +12,8 @@ st.set_page_config(
 
 # Importar módulos
 from src.database import Database
-from src.ui import clasificacion, mi_ficha, calendario, admin
+from src.ui import clasificacion, mi_ficha, calendario
+from src.ui.admin import es_admin_luis, mostrar_operaciones, mostrar_extra
 from src.ui.mundial_grupos import mostrar as mostrar_mundial
 
 # Inicializar la base de datos
@@ -93,15 +94,21 @@ def cargar_datos():
 datos = cargar_datos()
 
 # =============================================
-# PESTAÑAS (NUEVO ORDEN: Mi Ficha → Clasificación → Mundial → Calendario → Admin)
+# PESTAÑAS
 # =============================================
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+_tab_labels = [
     "👤 Mi Ficha",
     "🏆 Clasificación",
     "🌍 Mundial",
     "📅 Calendario",
-    "🔧 Admin"
-])
+]
+if es_admin_luis(nombre_usuario):
+    _tab_labels.extend(["🔧 Admin", "🎛️ Admin Extra"])
+
+_tabs = st.tabs(_tab_labels)
+tab1, tab2, tab3, tab4 = _tabs[:4]
+tab_admin = _tabs[4] if es_admin_luis(nombre_usuario) else None
+tab_admin_extra = _tabs[5] if es_admin_luis(nombre_usuario) else None
 
 # =============================================
 # PESTAÑA 1: MI FICHA
@@ -137,7 +144,12 @@ with tab4:
     calendario.mostrar(datos['partidos'])
 
 # =============================================
-# PESTAÑA 5: ADMIN
+# ADMIN (solo Luis)
 # =============================================
-with tab5:
-    admin.mostrar(nombre_usuario, datos['partidos'], db)
+if tab_admin is not None:
+    with tab_admin:
+        mostrar_operaciones(nombre_usuario, datos['partidos'], db)
+
+if tab_admin_extra is not None:
+    with tab_admin_extra:
+        mostrar_extra(nombre_usuario, datos['partidos'], db)
