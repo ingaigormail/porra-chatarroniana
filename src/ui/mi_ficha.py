@@ -267,7 +267,9 @@ def mostrar(nombre_usuario, usuarios, df_rank, db):
     finalistas_activo = db.obtener_configuracion('finalistas_activo') == 'true'
 
     if not finalistas_activo:
-        st.info("⏳ La apuesta de finalistas aún no está disponible. El administrador la activará cuando llegue el momento.")
+        st.info(
+            "🔒 Las apuestas de finalistas están cerradas. "
+            "Ya no puedes cambiar tu elección.")
     else:
         st.caption("Elige los 2 equipos que crees que llegarán a la Final")
 

@@ -123,3 +123,28 @@ class PartidosService:
                 'message': 'Estado de apuesta actualizado'}
         except Exception as e:
             return {'success': False, 'message': str(e)}
+
+    def cerrar_apuestas_por_tipo(self, tipo_apuesta, fase=None):
+        """Cierra partidos abiertos de quiniela o porra (opcionalmente solo una fase)."""
+        try:
+            if tipo_apuesta not in ('quiniela', 'porra'):
+                return {
+                    'success': False,
+                    'message': 'Tipo inválido',
+                    'cerrados': 0,
+                }
+            query = self.client.table('partidos').update({
+                'apuestas_abiertas': False,
+            }).eq('tipo_apuesta', tipo_apuesta).eq('apuestas_abiertas', True)
+            if fase:
+                query = query.eq('fase', fase)
+            resp = query.execute()
+            n = len(resp.data or [])
+            donde = f' en {fase}' if fase else ''
+            return {
+                'success': True,
+                'message': f'Cerrada la {tipo_apuesta}{donde}: {n} partido(s)',
+                'cerrados': n,
+            }
+        except Exception as e:
+            return {'success': False, 'message': str(e), 'cerrados': 0}

@@ -144,6 +144,10 @@ class Database:
     def obtener_apuestas_usuario(self, usuario_id, fase=None):
         return self.quiniela.obtener_apuestas_usuario(usuario_id, fase)
 
+    def resumen_apuestas_partido(self, partido_id, nombres_usuarios):
+        return self.quiniela.resumen_apuestas_partido(
+            partido_id, nombres_usuarios)
+
     def apostar_finalistas(self, usuario_id, finalista_1_id, finalista_2_id):
         return self.quiniela.apostar_finalistas(
             usuario_id, finalista_1_id, finalista_2_id)
@@ -166,6 +170,13 @@ class Database:
             apuestas_abiertas):
         return self.partidos.actualizar_estado_apuesta(
             partido_id, tipo_apuesta, apuestas_abiertas)
+
+    def cerrar_apuestas_tipo(self, tipo_apuesta, fase=None):
+        return self.partidos.cerrar_apuestas_por_tipo(tipo_apuesta, fase=fase)
+
+    def cerrar_apuestas_finalistas(self):
+        return self.configuracion.actualizar_valor(
+            'finalistas_activo', 'false')
 
     # =============================================
     # CONFIGURACIÓN (FINALISTAS, ETC.)

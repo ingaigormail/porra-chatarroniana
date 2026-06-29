@@ -9,6 +9,222 @@ from src.ui.admin._common import es_admin_luis, refrescar_datos, formatear_fecha
 from src.ui.admin.progresion_panel import mostrar_progresion
 
 
+def _etiqueta_partido_apuesta(partido):
+    local = partido.get('equipo_local_nombre', '?')
+    visit = partido.get('equipo_visitante_nombre', '?')
+    fase = partido.get('fase', '')
+    pid = partido.get('id')
+    tipo = partido.get('tipo_apuesta', '')
+    return f"#{pid} {local} vs {visit} ({fase}) — {tipo}"
+
+
+def _mostrar_resumen_partido(db, partido, nombres_usuarios):
+    partido_id = int(partido['id'])
+    resumen = db.quiniela.resumen_apuestas_partido(partido_id, nombres_usuarios)
+    hechas = resumen['hechas']
+    total = resumen['total_usuarios']
+    faltan_n = len(resumen['faltan'])
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Apuestas hechas", hechas)
+    c2.metric("Faltan por apostar", faltan_n)
+    c3.metric("Total jugadores", total)
+
+    if resumen['apostaron']:
+        st.markdown("**✅ Ya apostaron**")
+        st.dataframe(
+            pd.DataFrame(resumen['apostaron']),
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                'usuario': 'Usuario',
+                'tipo': 'Tipo',
+                'apuesta': 'Elección',
+                'puntos_provisionales': st.column_config.NumberColumn(
+                    'Pts prov.', format='%d'),
+                'puntos_finales': st.column_config.NumberColumn(
+                    'Pts finales', format='%d'),
+                'validado': 'Validado',
+            },
+        )
+    else:
+        st.info("Nadie ha apostado en este partido todavía.")
+
+    if resumen['faltan']:
+        st.markdown("**⚠️ Aún no han apostado**")
+        st.write(", ".join(resumen['faltan']))
+    elif total > 0:
+        st.success("Todos los jugadores han apostado en este partido.")
+
+
+def _mostrar_estado_apuestas_quiniela_porra(db, partidos):
+    st.subheader("📋 Estado de apuestas Quiniela/Porra")
+    st.caption(
+        "Quién ha apostado, qué resultado eligió y cuántos jugadores faltan "
+        "(igual que la sección de finalistas).")
+
+    usuarios_df = db.obtener_usuarios()
+    if usuarios_df.empty:
+        st.warning("No hay usuarios registrados.")
+        return
+    nombres = usuarios_df['nombre'].tolist()
+
+    mask_tipo = partidos['tipo_apuesta'].isin(['quiniela', 'porra'])
+    partidos_apuesta = partidos[mask_tipo].copy()
+    if partidos_apuesta.empty:
+        st.info(
+            "No hay partidos con quiniela o porra activados. "
+            "Configúralos arriba en Gestión de Apuestas.")
+        return
+
+    abiertos = partidos_apuesta[
+        partidos_apuesta['apuestas_abiertas'] == True]
+    if not abiertos.empty:
+        st.markdown("#### 🔓 Partidos abiertos ahora")
+        for _, partido in abiertos.iterrows():
+            titulo = _etiqueta_partido_apuesta(partido)
+            with st.expander(titulo, expanded=len(abiertos) <= 3):
+                _mostrar_resumen_partido(db, partido, nombres)
+
+    st.markdown("#### 🔍 Ver cualquier partido con quiniela/porra")
+    opciones = {
+        _etiqueta_partido_apuesta(row): int(row['id'])
+        for _, row in partidos_apuesta.iterrows()
+    }
+    elegido = st.selectbox(
+        "Selecciona partido",
+        options=[""] + list(opciones.keys()),
+        key="admin_estado_apuestas_partido",
+    )
+    if elegido:
+        fila = partidos_apuesta[partidos_apuesta['id'] == opciones[elegido]].iloc[0]
+        _mostrar_resumen_partido(db, fila, nombres)
+
+
+def _key_fase(fase):
+    return ''.join(c if c.isalnum() else '_' for c in str(fase))
+
+
+def _mostrar_cerrar_apuestas(db, partidos):
+    st.subheader("🔒 Cerrar apuestas")
+    st.caption(
+        "En cada fase de eliminatoria abres los partidos de quiniela y/o porra "
+        "en **Gestión de apuestas**, los usuarios apuestan, y aquí los cierras. "
+        "Los partidos ya cerrados quedan guardados; en la siguiente fase eliges "
+        "otros partidos y los abres de nuevo. Solo se cierran los que están "
+        "**abiertos ahora**.")
+
+    abiertos_q = partidos[
+        (partidos['tipo_apuesta'] == 'quiniela')
+        & (partidos['apuestas_abiertas'] == True)]
+    abiertos_p = partidos[
+        (partidos['tipo_apuesta'] == 'porra')
+        & (partidos['apuestas_abiertas'] == True)]
+    abiertos = partidos[
+        partidos['tipo_apuesta'].isin(['quiniela', 'porra'])
+        & (partidos['apuestas_abiertas'] == True)]
+    fin_abierto = db.obtener_configuracion('finalistas_activo') == 'true'
+
+    if not abiertos.empty:
+        st.markdown("**Partidos abiertos ahora**")
+        for fase in abiertos['fase'].drop_duplicates():
+            en_fase = abiertos[abiertos['fase'] == fase]
+            st.markdown(f"🏟️ **{fase}**")
+            for _, p in en_fase.iterrows():
+                st.caption(_etiqueta_partido_apuesta(p))
+            nq = len(en_fase[en_fase['tipo_apuesta'] == 'quiniela'])
+            np = len(en_fase[en_fase['tipo_apuesta'] == 'porra'])
+            bc1, bc2 = st.columns(2)
+            kf = _key_fase(fase)
+            with bc1:
+                if nq:
+                    if st.button(
+                            f"🔒 Cerrar quiniela ({fase})",
+                            use_container_width=True,
+                            key=f"cerrar_q_{kf}"):
+                        r = db.cerrar_apuestas_tipo('quiniela', fase=fase)
+                        if r.get('success'):
+                            st.success(r['message'])
+                            refrescar_datos()
+                            st.rerun()
+                        else:
+                            st.error(r.get('message', 'Error'))
+            with bc2:
+                if np:
+                    if st.button(
+                            f"🔒 Cerrar porra ({fase})",
+                            use_container_width=True,
+                            key=f"cerrar_p_{kf}"):
+                        r = db.cerrar_apuestas_tipo('porra', fase=fase)
+                        if r.get('success'):
+                            st.success(r['message'])
+                            refrescar_datos()
+                            st.rerun()
+                        else:
+                            st.error(r.get('message', 'Error'))
+        st.write("---")
+
+    st.markdown("**Cerrar todo lo abierto** (si solo tienes una fase activa)")
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        if abiertos_q.empty:
+            st.success("Quiniela: cerrada")
+        else:
+            st.warning(f"Quiniela: **{len(abiertos_q)}** partido(s) abierto(s)")
+        if st.button(
+                "🔒 Cerrar toda la quiniela",
+                type="primary",
+                use_container_width=True,
+                key="btn_cerrar_quiniela",
+                disabled=abiertos_q.empty):
+            r = db.cerrar_apuestas_tipo('quiniela')
+            if r.get('success'):
+                st.success(r['message'])
+                refrescar_datos()
+                st.rerun()
+            else:
+                st.error(r.get('message', 'Error'))
+
+    with c2:
+        if abiertos_p.empty:
+            st.success("Porra: cerrada")
+        else:
+            st.warning(f"Porra: **{len(abiertos_p)}** partido(s) abierto(s)")
+        if st.button(
+                "🔒 Cerrar toda la porra",
+                type="primary",
+                use_container_width=True,
+                key="btn_cerrar_porra",
+                disabled=abiertos_p.empty):
+            r = db.cerrar_apuestas_tipo('porra')
+            if r.get('success'):
+                st.success(r['message'])
+                refrescar_datos()
+                st.rerun()
+            else:
+                st.error(r.get('message', 'Error'))
+
+    with c3:
+        if not fin_abierto:
+            st.success("Finalistas: cerrados")
+        else:
+            st.warning("Finalistas: **abiertos**")
+        if st.button(
+                "🔒 Cerrar finalistas",
+                type="primary",
+                use_container_width=True,
+                key="btn_cerrar_finalistas",
+                disabled=not fin_abierto):
+            r = db.cerrar_apuestas_finalistas()
+            if r.get('success'):
+                st.success("Apuestas de finalistas cerradas")
+                refrescar_datos()
+                st.rerun()
+            else:
+                st.error(r.get('error', 'Error'))
+
+
 def mostrar_extra(nombre_usuario, partidos, db):
     if not es_admin_luis(nombre_usuario):
         st.warning("Solo disponible para Luis.")
@@ -18,6 +234,9 @@ def mostrar_extra(nombre_usuario, partidos, db):
     partidos = ordenar_partidos(db.obtener_partidos())
 
     mostrar_progresion(db)
+
+    st.write("---")
+    _mostrar_cerrar_apuestas(db, partidos)
 
     st.write("---")
 
@@ -106,6 +325,8 @@ def mostrar_extra(nombre_usuario, partidos, db):
                             st.rerun()
                         else:
                             st.error(f"❌ {resultado['message']}")
+
+    _mostrar_estado_apuestas_quiniela_porra(db, partidos)
 
     st.write("---")
 

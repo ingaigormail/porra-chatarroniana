@@ -140,6 +140,50 @@ class QuinielaService:
         df.drop(columns=['usuarios'], inplace=True)
         return df
 
+    @staticmethod
+    def texto_apuesta(tipo, eleccion_quiniela=None,
+                      goles_local=None, goles_visitante=None):
+        if tipo == 'quiniela':
+            return f"1/X/2 → {eleccion_quiniela or '?'}"
+        gl = 0 if goles_local is None else goles_local
+        gv = 0 if goles_visitante is None else goles_visitante
+        return f"Marcador → {gl}-{gv}"
+
+    def resumen_apuestas_partido(self, partido_id, nombres_usuarios):
+        """Quién apostó, qué eligió y quién falta (como finalistas)."""
+        nombres_usuarios = sorted(set(nombres_usuarios))
+        apuestas_df = self.obtener_apuestas_partido(partido_id)
+        apostaron = []
+        con_apuesta = set()
+
+        for _, row in apuestas_df.iterrows():
+            nombre = row.get('usuario_nombre') or ''
+            if not nombre:
+                continue
+            con_apuesta.add(nombre)
+            apostaron.append({
+                'usuario': nombre,
+                'tipo': row.get('tipo', ''),
+                'apuesta': self.texto_apuesta(
+                    row.get('tipo'),
+                    row.get('eleccion_quiniela'),
+                    row.get('goles_local_apostados'),
+                    row.get('goles_visitante_apostados'),
+                ),
+                'puntos_provisionales': int(row.get('puntos_provisionales') or 0),
+                'puntos_finales': int(row.get('puntos_finales') or 0),
+                'validado': bool(row.get('validado')),
+            })
+
+        apostaron.sort(key=lambda x: x['usuario'].lower())
+        faltan = [u for u in nombres_usuarios if u not in con_apuesta]
+        return {
+            'apostaron': apostaron,
+            'faltan': faltan,
+            'total_usuarios': len(nombres_usuarios),
+            'hechas': len(con_apuesta),
+        }
+
     def validar_apuestas(self, partido_id, puntos_editados=None):
         apuestas = self.client.table('quinielas')\
             .select('id, puntos_provisionales')\
@@ -224,6 +268,14 @@ class QuinielaService:
         return df
 
     def apostar_finalistas(self, usuario_id, finalista_1_id, finalista_2_id):
+        activo = self.client.table('configuracion').select('valor').eq(
+            'clave', 'finalistas_activo').limit(1).execute()
+        if not activo.data or activo.data[0].get('valor') != 'true':
+            return {
+                'success': False,
+                'message': 'Las apuestas de finalistas están cerradas',
+            }
+
         # Convertir int64 a int para evitar problemas de serialización JSON
         usuario_id = int(usuario_id)
         finalista_1_id = int(finalista_1_id)
