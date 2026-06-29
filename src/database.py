@@ -205,6 +205,9 @@ class Database:
     def aplicar_progresion_fase(self, fase, puntos_por_equipo=None):
         return self.progresion.aplicar_progresion_fase(fase, puntos_por_equipo)
 
+    def corregir_bonus_dieciseisavos(self):
+        return self.progresion.corregir_bonus_dieciseisavos()
+
     def eliminar_toda_progresion(self):
         return self.progresion.eliminar_toda_progresion()
 

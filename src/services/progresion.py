@@ -5,6 +5,7 @@ from datetime import datetime
 from config.puntos_progresion import (
     FASES_PROGRESION,
     PUNTOS_1_GRUPO,
+    PUNTOS_1_GRUPO_INVICTO,
     PUNTOS_2_GRUPO,
     PUNTOS_MEJOR_TERCERO,
     PUNTOS_FASE_FIJA,
@@ -37,9 +38,17 @@ class ProgresionService:
                 pos = int(row['posicion'])
                 eid = int(row['id'])
                 if pos == 1:
+                    perdidos = int(row.get('perdidos', 0) or 0)
+                    pj = int(row.get('pj', 0) or 0)
+                    invicto = pj > 0 and perdidos == 0
+                    puntos = PUNTOS_1_GRUPO + (
+                        PUNTOS_1_GRUPO_INVICTO if invicto else 0)
+                    motivo = f'1º Grupo {grupo}'
+                    if invicto:
+                        motivo += ' (invicto)'
                     mapa[eid] = {
-                        'motivo': f'1º Grupo {grupo}',
-                        'puntos': PUNTOS_1_GRUPO,
+                        'motivo': motivo,
+                        'puntos': puntos,
                     }
                 elif pos == 2:
                     mapa[eid] = {
@@ -159,6 +168,53 @@ class ProgresionService:
         if errores:
             msg += ' Avisos: ' + '; '.join(errores[:3])
         return {'success': True, 'message': msg, 'equipos': equipos_ok}
+
+    def corregir_bonus_dieciseisavos(self):
+        """Ajusta bonus Dieciseisavos ya aplicados según mapa actual (mejores 3º, etc.)."""
+        mapa = self._mapa_clasificacion_dieciseisavos()
+        en_fase = self.equipos_en_fase_partidos('Dieciseisavos')
+        actualizados = 0
+        eliminados = 0
+        detalle = []
+
+        for _, eq in en_fase.iterrows():
+            eid = int(eq['id'])
+            nombre = eq['nombre']
+            if not self._equipo_ya_aplicado(eid, 'Dieciseisavos'):
+                continue
+            pts_ok = int(mapa.get(eid, {}).get('puntos', 0))
+            if pts_ok <= 0:
+                r = self.eliminar_progresion_equipo_fase(eid, 'Dieciseisavos')
+                if r.get('success'):
+                    eliminados += 1
+                    detalle.append(f'{nombre}: quitado')
+            else:
+                r = self.actualizar_puntos_equipo_fase(
+                    eid, 'Dieciseisavos', pts_ok)
+                if r.get('success'):
+                    actualizados += 1
+                    detalle.append(
+                        f"{nombre}: {pts_ok} ({mapa[eid]['motivo']})")
+                elif self._equipo_ya_aplicado(eid, 'Dieciseisavos'):
+                    self._marcar_aplicado_sin_usuarios(
+                        eid, 'Dieciseisavos', pts_ok)
+                    actualizados += 1
+                    detalle.append(f'{nombre}: marcador {pts_ok}')
+
+        msg = (
+            f'Corregidos {actualizados} equipo(s), '
+            f'eliminados {eliminados} sin bonus de dieciseisavos.'
+        )
+        if detalle:
+            msg += ' ' + '; '.join(detalle[:6])
+            if len(detalle) > 6:
+                msg += f' (+{len(detalle) - 6} más)'
+        return {
+            'success': True,
+            'message': msg,
+            'actualizados': actualizados,
+            'eliminados': eliminados,
+        }
 
     def eliminar_toda_progresion(self):
         try:

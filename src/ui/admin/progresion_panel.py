@@ -2,14 +2,34 @@
 """Panel Admin: aplicar bonus de progresión por fase."""
 import streamlit as st
 from config.puntos_progresion import FASES_PROGRESION
+from config.mejores_terceros import MEJORES_TERCEROS_OFICIAL
 from src.ui.admin._common import refrescar_datos
 
 
 def mostrar_progresion(db):
     st.subheader("📈 Progresión por fase (bonus selecciones)")
     st.caption(
-        "Dieciseisavos: 1º=18, 2º=15, 3º mejor 1-8=12…2. "
+        "Dieciseisavos: 1º=18 (+3 invicto), 2º=15, 3º mejor 1-8=12…2. "
         "Octavos +10, Cuartos +15, Semis +20, Final +30.")
+
+    with st.expander("🏅 Ranking oficial mejores 8 terceros"):
+        for item in MEJORES_TERCEROS_OFICIAL:
+            st.write(
+                f"**{item['posicion']}.** {item['equipo']} "
+                f"(Grupo {item['grupo']})"
+            )
+
+    if st.button(
+            "🔧 Corregir bonus Dieciseisavos ya aplicados",
+            use_container_width=True,
+            key="prog_corregir_r16"):
+        with st.spinner("Recalculando bonus de dieciseisavos..."):
+            r = db.corregir_bonus_dieciseisavos()
+        if r['success']:
+            st.success(r['message'])
+            refrescar_datos()
+        else:
+            st.error(r['message'])
 
     st.markdown("#### 🗑️ Borrar progresión antigua")
     st.warning(

@@ -4,6 +4,7 @@
 # Dieciseisavos — según cómo clasificó en grupos
 PUNTOS_1_GRUPO = 18
 PUNTOS_2_GRUPO = 15
+PUNTOS_1_GRUPO_INVICTO = 3  # extra: 1º de grupo sin ninguna derrota en fase de grupos
 
 # Ranking entre los 8 mejores terceros (1 = mejor)
 PUNTOS_MEJOR_TERCERO = {

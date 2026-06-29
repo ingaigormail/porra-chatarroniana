@@ -3,6 +3,7 @@
 import pandas as pd
 
 from src.services.annex_c_data import ANNEX_C_ROWS, ANNEX_C_WINNERS
+from config.mejores_terceros import GRUPOS_TERCERO_CLASIFICAN, RANK_POR_GRUPO_TERCERO
 
 GRUPOS = list('ABCDEFGHIJKL')
 
@@ -79,6 +80,24 @@ class CrucesService:
 
         if not terceros:
             return pd.DataFrame()
+
+        if GRUPOS_TERCERO_CLASIFICAN:
+            for t in terceros:
+                grupo = t['grupo']
+                if grupo in GRUPOS_TERCERO_CLASIFICAN:
+                    t['posicion_mejores_terceros'] = RANK_POR_GRUPO_TERCERO[grupo]
+                    t['clasifica'] = True
+                else:
+                    t['posicion_mejores_terceros'] = None
+                    t['clasifica'] = False
+            terceros_ordenados = sorted(
+                terceros,
+                key=lambda x: (
+                    x['posicion_mejores_terceros'] is None,
+                    x['posicion_mejores_terceros'] or 99,
+                ),
+            )
+            return pd.DataFrame(terceros_ordenados)
 
         terceros_ordenados = sorted(
             terceros,
