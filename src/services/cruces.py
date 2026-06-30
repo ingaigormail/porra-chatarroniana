@@ -35,6 +35,13 @@ AVANCE_ELIMINATORIA = {
     101: (97, 98), 102: (99, 100),
 }
 
+FASE_SIGUIENTE_ELIMINATORIA = {
+    'Dieciseisavos': 'Octavos',
+    'Octavos': 'Cuartos',
+    'Cuartos': 'Semifinal',
+    'Semifinal': 'Final',
+}
+
 FASES_ELIMINATORIA = [
     (range(73, 89), 'Dieciseisavos'),
     (range(89, 97), 'Octavos'),
@@ -229,12 +236,15 @@ class CrucesService:
             return None
         gl = int(partido.get('goles_local') or 0)
         gv = int(partido.get('goles_visitante') or 0)
-        if partido.get('hubo_prorroga') and partido.get('ganador_prorroga'):
-            gp = partido['ganador_prorroga']
+        gp = partido.get('ganador_prorroga')
+        if gl == gv and gp in ('local', 'visitante'):
             if gp == 'local':
                 return partido['equipo_local_id']
-            if gp == 'visitante':
-                return partido['equipo_visitante_id']
+            return partido['equipo_visitante_id']
+        if partido.get('hubo_prorroga') and gp in ('local', 'visitante'):
+            if gp == 'local':
+                return partido['equipo_local_id']
+            return partido['equipo_visitante_id']
         if gl > gv:
             return partido['equipo_local_id']
         if gv > gl:
@@ -292,3 +302,64 @@ class CrucesService:
             campo: equipo_id,
             'fase': _fase_partido(siguiente_id),
         }).eq('id', siguiente_id).execute()
+
+    def _limpiar_slot_siguiente(
+            self, siguiente_id: int, equipo_id: int, *, es_local: bool) -> bool:
+        dest = self.client.table('partidos').select('*').eq(
+            'id', siguiente_id).execute()
+        if not dest.data:
+            return False
+        campo = 'equipo_local_id' if es_local else 'equipo_visitante_id'
+        if dest.data[0].get(campo) != equipo_id:
+            return False
+        self.client.table('partidos').update({
+            campo: None,
+        }).eq('id', siguiente_id).execute()
+        return True
+
+    def revertir_avance_ganador(self, partido_id: int, ganador_id=None):
+        """Quita del cruce siguiente el equipo que avanzó desde este partido."""
+        if ganador_id is None:
+            resp = self.client.table('partidos').select('*').eq(
+                'id', partido_id).execute()
+            if not resp.data:
+                return {'success': False, 'message': 'Partido no encontrado', 'slots': 0}
+            ganador_id = self._ganador_partido(resp.data[0])
+        if not ganador_id:
+            return {
+                'success': True,
+                'message': 'Sin ganador que revertir en el cuadro',
+                'slots': 0,
+                'ganador_id': None,
+            }
+
+        slots = 0
+        if partido_id in (101, 102):
+            if self._limpiar_slot_siguiente(
+                    104, ganador_id, es_local=(partido_id == 101)):
+                slots += 1
+            perdedor = None
+            resp = self.client.table('partidos').select('*').eq(
+                'id', partido_id).execute()
+            if resp.data:
+                perdedor = self._perdedor_partido(resp.data[0])
+            if perdedor and self._limpiar_slot_siguiente(
+                    103, perdedor, es_local=(partido_id == 101)):
+                slots += 1
+        else:
+            for siguiente_id, (id_a, id_b) in AVANCE_ELIMINATORIA.items():
+                if partido_id == id_a:
+                    if self._limpiar_slot_siguiente(
+                            siguiente_id, ganador_id, es_local=True):
+                        slots += 1
+                if partido_id == id_b:
+                    if self._limpiar_slot_siguiente(
+                            siguiente_id, ganador_id, es_local=False):
+                        slots += 1
+
+        return {
+            'success': True,
+            'message': f'Quitado del cuadro en {slots} hueco(s)',
+            'slots': slots,
+            'ganador_id': ganador_id,
+        }

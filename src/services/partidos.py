@@ -90,6 +90,78 @@ class PartidosService:
             print(f"Error en guardar_resultado: {e}")
             return False
 
+    def revertir_resultado(self, partido_id, admin):
+        """Vuelve un partido a Pendiente y deshace cuadro, apuestas y puntos."""
+        try:
+            partido_id = int(partido_id)
+            resp = self.client.table('partidos').select('*').eq(
+                'id', partido_id).execute()
+            if not resp.data:
+                return {'success': False, 'message': 'Partido no encontrado'}
+            partido = resp.data[0]
+            if partido.get('estado') != 'Jugado':
+                return {
+                    'success': False,
+                    'message': 'El partido ya está pendiente',
+                }
+
+            from src.services.cruces import CrucesService, FASE_SIGUIENTE_ELIMINATORIA
+            cruces_svc = CrucesService(self.client)
+            rev = cruces_svc.revertir_avance_ganador(partido_id)
+            ganador_id = rev.get('ganador_id')
+
+            fase = partido.get('fase', '')
+            fase_sig = FASE_SIGUIENTE_ELIMINATORIA.get(fase)
+            prog_msg = ''
+            if ganador_id and fase_sig:
+                from src.services.progresion import ProgresionService
+                prog = ProgresionService(self.client)
+                r_prog = prog.eliminar_progresion_equipo_fase(
+                    ganador_id, fase_sig)
+                if r_prog.get('eliminados', 0) > 0:
+                    prog_msg = (
+                        f" Progresión {fase_sig} del ganador revertida "
+                        f"({r_prog['eliminados']} registro(s)).")
+
+            self.client.table('partidos').update({
+                'goles_local': 0,
+                'goles_visitante': 0,
+                'estado': 'Pendiente',
+                'hubo_prorroga': False,
+                'ganador_prorroga': None,
+            }).eq('id', partido_id).execute()
+
+            from src.services.quiniela import QuinielaService
+            quiniela_svc = QuinielaService(self.client)
+            q_rev = quiniela_svc.resetear_puntos_partido(partido_id)
+
+            partidos_df = self.obtener_partidos()
+            from src.services.equipos import EquiposService
+            EquiposService(self.client)._recalcular_puntos_equipos(partidos_df)
+
+            self.client.table('auditoria').insert({
+                'admin': admin,
+                'accion': 'Revertir_resultado',
+                'detalle': (
+                    f"Partido {partido_id} revertido a Pendiente. "
+                    f"Cuadro: {rev.get('slots', 0)} hueco(s). "
+                    f"Apuestas: {q_rev.get('apuestas', 0)}.{prog_msg}"
+                ),
+            }).execute()
+
+            return {
+                'success': True,
+                'message': (
+                    f'Partido #{partido_id} vuelve a Pendiente. '
+                    f'Apuestas reseteadas ({q_rev.get("apuestas", 0)}).'
+                    f'{prog_msg}'
+                ),
+                'slots': rev.get('slots', 0),
+                'apuestas': q_rev.get('apuestas', 0),
+            }
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
+
     def obtener_partidos_abiertos_apuestas(self):
         response = self.client.table('partidos')\
             .select('*')\

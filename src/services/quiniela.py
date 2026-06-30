@@ -126,6 +126,21 @@ class QuinielaService:
                 len(
                     apuestas.data)} apuestas'}
 
+    def resetear_puntos_partido(self, partido_id):
+        """Anula puntos calculados/validados de un partido (al revertir resultado)."""
+        resp = self.client.table('quinielas').update({
+            'puntos_provisionales': 0,
+            'puntos_finales': 0,
+            'validado': False,
+            'procesado': False,
+        }).eq('partido_id', partido_id).execute()
+        n = len(resp.data or [])
+        return {
+            'success': True,
+            'message': f'Reseteadas {n} apuesta(s) del partido {partido_id}',
+            'apuestas': n,
+        }
+
     def obtener_apuestas_partido(self, partido_id):
         response = self.client.table('quinielas')\
             .select('*, usuarios(nombre)')\

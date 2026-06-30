@@ -106,6 +106,12 @@ class Database:
             self.guardar_snapshot()
         return resultado
 
+    def revertir_resultado(self, partido_id, admin):
+        resultado = self.partidos.revertir_resultado(partido_id, admin)
+        if resultado.get('success'):
+            self.guardar_snapshot()
+        return resultado
+
     def calcular_clasificacion_grupo(self, grupo):
         return self.grupos.calcular_clasificacion_grupo(grupo)
 
