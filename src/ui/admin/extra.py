@@ -18,7 +18,7 @@ def _etiqueta_partido_apuesta(partido):
     return f"#{pid} {local} vs {visit} ({fase}) — {tipo}"
 
 
-def _mostrar_resumen_partido(db, partido, nombres_usuarios):
+def _mostrar_resumen_partido(db, partido, nombres_usuarios, nombre_admin=None):
     partido_id = int(partido['id'])
     resumen = db.quiniela.resumen_apuestas_partido(partido_id, nombres_usuarios)
     hechas = resumen['hechas']
@@ -32,8 +32,19 @@ def _mostrar_resumen_partido(db, partido, nombres_usuarios):
 
     if resumen['apostaron']:
         st.markdown("**✅ Ya apostaron**")
+        filas = []
+        for a in resumen['apostaron']:
+            filas.append({
+                'usuario': a['usuario'],
+                'tipo': a['tipo'],
+                'apuesta': a['apuesta'],
+                'puntos_provisionales': a['puntos_provisionales'],
+                'puntos_finales': a['puntos_finales'],
+                'estado_validacion': (
+                    '✅ Validado' if a.get('validado') else '⏳ Pendiente'),
+            })
         st.dataframe(
-            pd.DataFrame(resumen['apostaron']),
+            pd.DataFrame(filas),
             hide_index=True,
             use_container_width=True,
             column_config={
@@ -44,9 +55,13 @@ def _mostrar_resumen_partido(db, partido, nombres_usuarios):
                     'Pts prov.', format='%d'),
                 'puntos_finales': st.column_config.NumberColumn(
                     'Pts finales', format='%d'),
-                'validado': 'Validado',
+                'estado_validacion': 'Validado',
             },
         )
+        st.caption(
+            "La columna **Validado** es solo informativa (no se puede marcar aquí). "
+            "Para aplicar puntos al ranking usa el bloque de abajo "
+            "**✅ Validar apuestas de este partido**.")
     else:
         st.info("Nadie ha apostado en este partido todavía.")
 
@@ -56,8 +71,170 @@ def _mostrar_resumen_partido(db, partido, nombres_usuarios):
     elif total > 0:
         st.success("Todos los jugadores han apostado en este partido.")
 
+    if nombre_admin:
+        st.write("---")
+        _mostrar_validar_partido(db, partido, nombre_admin)
 
-def _mostrar_estado_apuestas_quiniela_porra(db, partidos):
+
+def _mostrar_validar_partido(db, partido, nombre_usuario):
+    """Aplicar puntos finales al ranking (quiniela/porra)."""
+    partido_id = int(partido['id'])
+    if partido.get('estado') != 'Jugado':
+        return
+
+    apuestas_df = db.quiniela.obtener_apuestas_partido(partido_id)
+    if apuestas_df.empty:
+        return
+
+    pendientes = apuestas_df[~apuestas_df['validado'].fillna(False)]
+    if pendientes.empty:
+        st.info("Este partido ya tiene todas las apuestas validadas.")
+        return
+
+    st.markdown("**✅ Validar apuestas de este partido**")
+    gl = partido.get('goles_local', 0)
+    gv = partido.get('goles_visitante', 0)
+    st.write(
+        f"Resultado real: **{partido.get('equipo_local_nombre', '?')}** "
+        f"{gl}-{gv} **{partido.get('equipo_visitante_nombre', '?')}**")
+
+    if (apuestas_df['puntos_provisionales'].fillna(0) == 0).all():
+        st.warning(
+            "Los puntos provisionales están a 0. Guarda de nuevo el resultado "
+            "en **Admin → Operación** o pulsa 🧮 en ese partido.")
+
+    st.caption(
+        "Quien acertó ya debería tener pts. prov. (3 quiniela, 5/2 porra). "
+        "Ajusta si hace falta y pulsa **Aplicar al ranking**.")
+
+    puntos_editados = {}
+    for _, row in apuestas_df.iterrows():
+        if row.get('validado'):
+            continue
+        prov = int(row.get('puntos_provisionales') or 0)
+        puntos_editados[row['id']] = st.selectbox(
+            f"Puntos finales — {row['usuario_nombre']} "
+            f"({row.get('tipo', '')}, prov. {prov})",
+            options=list(range(101)),
+            index=max(0, min(100, prov)),
+            key=f"validar_pts_{partido_id}_{row['id']}",
+        )
+
+    if st.button(
+            "✅ Aplicar al ranking",
+            type="primary",
+            key=f"btn_validar_partido_{partido_id}"):
+        resultado = db.quiniela.validar_apuestas(partido_id, puntos_editados)
+        if resultado['success']:
+            st.success(resultado['message'])
+            refrescar_datos()
+            st.rerun()
+        else:
+            st.error(resultado['message'])
+
+
+def _mostrar_aplicar_puntos_quiniela_porra(db, partidos):
+    """Bloque visible para pasar pts. prov. → ranking (quiniela/porra)."""
+    st.subheader("🏅 Aplicar puntos Quiniela / Porra al ranking")
+    st.caption(
+        "Tras guardar el resultado en **Admin → Operación**, quien acertó ya tiene "
+        "**pts. prov.** (3 quiniela, 5/2 porra). Aquí confirmas con el botón rojo "
+        "para que sumen en **Clasificación**.")
+
+    jugados = partidos[partidos['estado'] == 'Jugado'].copy()
+    jugados = jugados[jugados['tipo_apuesta'].isin(['quiniela', 'porra'])]
+    if jugados.empty:
+        st.info("No hay partidos jugados configurados como quiniela o porra.")
+        return
+
+    pendientes_ids = []
+    for _, p in jugados.iterrows():
+        ap = db.quiniela.obtener_apuestas_partido(int(p['id']))
+        if ap.empty:
+            continue
+        if (~ap['validado'].fillna(False)).any():
+            pendientes_ids.append(int(p['id']))
+
+    if pendientes_ids:
+        st.warning(
+            f"**{len(pendientes_ids)} partido(s)** con apuestas pendientes de "
+            "aplicar al ranking.")
+    else:
+        st.success("Todos los partidos quiniela/porra jugados ya están validados.")
+
+    opciones = {"— Elige partido —": None}
+    for _, row in jugados.iterrows():
+        pid = int(row['id'])
+        etiqueta = (
+            f"#{pid} {row.get('equipo_local_nombre', '?')} vs "
+            f"{row.get('equipo_visitante_nombre', '?')} ({row.get('fase', '')})"
+        )
+        if pid in pendientes_ids:
+            etiqueta = "⏳ " + etiqueta
+        elif not db.quiniela.obtener_apuestas_partido(pid).empty:
+            etiqueta = "✅ " + etiqueta
+        opciones[etiqueta] = pid
+
+    elegido = st.selectbox(
+        "Partido jugado (quiniela/porra)",
+        options=list(opciones.keys()),
+        key="admin_aplicar_pts_quiniela",
+    )
+    partido_id = opciones[elegido]
+    if not partido_id:
+        return
+
+    partido_row = jugados[jugados['id'] == partido_id].iloc[0]
+    apuestas_df = db.quiniela.obtener_apuestas_partido(partido_id)
+    if apuestas_df.empty:
+        st.info("Nadie apostó en este partido.")
+        return
+
+    st.write(
+        f"**Resultado:** {partido_row['equipo_local_nombre']} "
+        f"{partido_row['goles_local']}-{partido_row['goles_visitante']} "
+        f"{partido_row['equipo_visitante_nombre']}")
+
+    show = apuestas_df[[
+        'usuario_nombre', 'tipo', 'eleccion_quiniela',
+        'goles_local_apostados', 'goles_visitante_apostados',
+        'puntos_provisionales', 'puntos_finales', 'validado',
+    ]].copy()
+    show['validado'] = show['validado'].map(
+        lambda v: '✅' if v else '⏳')
+    st.dataframe(show, hide_index=True, use_container_width=True)
+
+    pendientes = apuestas_df[~apuestas_df['validado'].fillna(False)]
+    if pendientes.empty:
+        st.info("Este partido ya está validado; los puntos ya están en el ranking.")
+        return
+
+    puntos_editados = {}
+    for _, row in pendientes.iterrows():
+        prov = int(row.get('puntos_provisionales') or 0)
+        puntos_editados[row['id']] = st.selectbox(
+            f"Puntos finales — {row['usuario_nombre']} (prov. {prov})",
+            options=list(range(101)),
+            index=max(0, min(100, prov)),
+            key=f"aplicar_pts_{partido_id}_{row['id']}",
+        )
+
+    if st.button(
+            "✅ Aplicar puntos al ranking",
+            type="primary",
+            use_container_width=True,
+            key=f"btn_aplicar_ranking_{partido_id}"):
+        resultado = db.quiniela.validar_apuestas(partido_id, puntos_editados)
+        if resultado['success']:
+            st.success(resultado['message'])
+            st.balloons()
+            refrescar_datos()
+            st.rerun()
+        else:
+            st.error(resultado['message'])
+
+
+def _mostrar_estado_apuestas_quiniela_porra(db, partidos, nombre_usuario):
     st.subheader("📋 Estado de apuestas Quiniela/Porra")
     st.caption(
         "Quién ha apostado, qué resultado eligió y cuántos jugadores faltan "
@@ -84,7 +261,7 @@ def _mostrar_estado_apuestas_quiniela_porra(db, partidos):
         for _, partido in abiertos.iterrows():
             titulo = _etiqueta_partido_apuesta(partido)
             with st.expander(titulo, expanded=len(abiertos) <= 3):
-                _mostrar_resumen_partido(db, partido, nombres)
+                _mostrar_resumen_partido(db, partido, nombres, nombre_usuario)
 
     st.markdown("#### 🔍 Ver cualquier partido con quiniela/porra")
     opciones = {
@@ -98,7 +275,7 @@ def _mostrar_estado_apuestas_quiniela_porra(db, partidos):
     )
     if elegido:
         fila = partidos_apuesta[partidos_apuesta['id'] == opciones[elegido]].iloc[0]
-        _mostrar_resumen_partido(db, fila, nombres)
+        _mostrar_resumen_partido(db, fila, nombres, nombre_usuario)
 
 
 def _key_fase(fase):
@@ -326,7 +503,10 @@ def mostrar_extra(nombre_usuario, partidos, db):
                         else:
                             st.error(f"❌ {resultado['message']}")
 
-    _mostrar_estado_apuestas_quiniela_porra(db, partidos)
+    _mostrar_estado_apuestas_quiniela_porra(db, partidos, nombre_usuario)
+
+    st.write("---")
+    _mostrar_aplicar_puntos_quiniela_porra(db, partidos)
 
     st.write("---")
 
@@ -540,77 +720,4 @@ def mostrar_extra(nombre_usuario, partidos, db):
 
     st.write("---")
 
-    # ==========================================
-    # REVISAR Y VALIDAR APUESTAS
-    # ==========================================
-    st.subheader("✅ Revisar y Validar Apuestas")
-    st.caption(
-        "Una vez calculados los puntos provisionales, revisa y aplica los puntos definitivos.")
-    partidos_jugados = db.obtener_partidos()
-    partidos_jugados = partidos_jugados[partidos_jugados['estado'] == 'Jugado']
-    if partidos_jugados.empty:
-        st.info("No hay partidos jugados con apuestas pendientes de validar.")
-    else:
-        opciones_partidos = {}
-        for _, row in partidos_jugados.iterrows():
-            local_nom = row.get('equipo_local_nombre', '?')
-            visit_nom = row.get('equipo_visitante_nombre', '?')
-            fase = row.get('fase', '')
-            opciones_partidos[f"{row['id']} - {local_nom} vs {visit_nom} ({fase})"] = row['id']
-        partido_seleccionado = st.selectbox(
-            "Selecciona un partido jugado para revisar apuestas",
-            options=[""] + list(opciones_partidos.keys()),
-            key="admin_revisar"
-        )
-        if partido_seleccionado:
-            partido_id = opciones_partidos[partido_seleccionado]
-            apuestas_df = db.quiniela.obtener_apuestas_partido(partido_id)
-            if apuestas_df.empty:
-                st.info("No hay apuestas para este partido.")
-            else:
-                partido_info = partidos_jugados[partidos_jugados['id']
-                                                == partido_id].iloc[0]
-                st.write(
-                    f"**Resultado real:** {
-                        partido_info['equipo_local_nombre']} " f"{
-                        partido_info['goles_local']} - {
-                        partido_info['goles_visitante']} " f"{
-                        partido_info['equipo_visitante_nombre']}")
-                st.dataframe(
-                    apuestas_df[['usuario_nombre', 'tipo', 'eleccion_quiniela', 'goles_local_apostados',
-                                 'goles_visitante_apostados', 'puntos_provisionales']],
-                    hide_index=True,
-                    column_config={
-                        'usuario_nombre': 'Usuario',
-                        'tipo': 'Tipo',
-                        'eleccion_quiniela': '1/X/2',
-                        'goles_local_apostados': 'Goles Local',
-                        'goles_visitante_apostados': 'Goles Visitante',
-                        'puntos_provisionales': 'Pts. Prov.'
-                    }
-                )
-                st.write("**Edición manual de puntos (opcional):**")
-                puntos_editados = {}
-                for _, row in apuestas_df.iterrows():
-                    puntos_editados[row['id']] = st.selectbox(
-                        f"Puntos para {row['usuario_nombre']}",
-                        options=list(range(101)),
-                        index=max(0, min(100, int(row['puntos_provisionales'] or 0))),
-                        key=f"edit_{row['id']}",
-                    )
-                if st.button("✅ Validar y Aplicar Puntos", type="primary"):
-                    resultado = db.quiniela.validar_apuestas(
-                        partido_id, puntos_editados)
-                    if resultado['success']:
-                        st.success(resultado['message'])
-                        df_rank = db.obtener_clasificacion()
-                        for nombre in ['Luis', 'luis']:
-                            if nombre in df_rank['nombre'].values:
-                                puntos_luis = df_rank[df_rank['nombre']
-                                                      == nombre]['puntos'].values[0]
-                                st.info(
-                                    f"📊 Puntos totales de {nombre}: **{puntos_luis} pts**")
-                                break
-                        refrescar_datos()
-                    else:
-                        st.error(resultado['message'])
+    # (Validación quiniela/porra está arriba: «Aplicar puntos Quiniela / Porra»)
